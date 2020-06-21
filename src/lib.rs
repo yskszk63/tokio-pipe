@@ -21,12 +21,12 @@
 //! ```
 use std::cmp;
 use std::ffi::c_void;
+use std::fmt;
 use std::io;
 use std::mem::{self, MaybeUninit};
 use std::os::unix::io::{AsRawFd, IntoRawFd, RawFd};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::fmt;
 
 use bytes::{Buf, BufMut};
 use mio::event::Evented;
