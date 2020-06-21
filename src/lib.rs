@@ -25,6 +25,7 @@ use std::mem::{self, MaybeUninit};
 use std::os::unix::io::{AsRawFd, IntoRawFd, RawFd};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::fmt;
 
 use bytes::{Buf, BufMut};
 use mio::event::Evented;
@@ -188,6 +189,12 @@ impl IntoRawFd for PipeRead {
     }
 }
 
+impl fmt::Debug for PipeRead {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PipeRead({})", self.as_raw_fd())
+    }
+}
+
 /// Pipe write
 pub struct PipeWrite(PollEvented<PipeFd>);
 
@@ -231,6 +238,12 @@ impl AsyncWrite for PipeWrite {
         Self: Sized,
     {
         Pin::new(&mut self.0).poll_write_buf(cx, buf)
+    }
+}
+
+impl fmt::Debug for PipeWrite {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PipeRead({})", self.as_raw_fd())
     }
 }
 
