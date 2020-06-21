@@ -1,0 +1,15 @@
+[package]
+name = "tokio-pipe"
+version = "0.1.0"
+authors = ["yskszk63 <yskszk63@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+tokio = { version="0.2", features=["io-driver"] }
+libc = "0.2"
+mio = "0.6"
+bytes = "0.5"
+
+[dev-dependencies]
+tokio = { version="0.2", features=["macros", "rt-core", "io-util"] }
+anyhow = "1.0"

@@ -1,0 +1,40 @@
+name: tests
+
+on: push
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install rust nightly
+      run: rustup install nightly
+
+    - name: Install grcov
+      run: |
+        mkdir $HOME/grcov
+        curl -SsL "$GRCOV_URL" | tar -jxf - -C $HOME/grcov
+        chmod +x $HOME/grcov/grcov
+        echo "::add-path::$HOME/grcov"
+      env:
+        GRCOV_URL: 'https://github.com/mozilla/grcov/releases/download/v0.5.15/grcov-linux-x86_64.tar.bz2'
+
+    - name: Check format
+      run: cargo fmt -- --check
+
+    - name: Run grcov
+      run: |
+        cargo +nightly build
+        cargo +nightly test
+        grcov ./target/debug -s src -t lcov --llvm --branch --ignore-not-existing -o lcov.info --excl-br-line "#\[derive\(" --excl-line "#\[derive\(" --excl-br-start "mod tests \{" --excl-start "mod tests \{"
+      env:
+        CARGO_INCREMENTAL: "0"
+        RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
+        RUSTDOCFLAGS: "-Cpanic=abort"
+
+
+    - uses: codecov/codecov-action@v1
+      with:
+        file: ./lcov.info
+# vim: set sw=2 ts=2 sts=2:
