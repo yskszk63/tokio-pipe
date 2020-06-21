@@ -3,6 +3,12 @@ name = "tokio-pipe"
 version = "0.1.0"
 authors = ["yskszk63 <yskszk63@gmail.com>"]
 edition = "2018"
+description = "Asynchronous pipe(2) library using tokio."
+license = "MIT/Apache-2.0"
+repository = "https://github.com/yskszk63/tokio-pipe"
+readme = "README.md"
+keywords = ["tokio", "pipe", "async"]
+categories = ["asynchronous"]
 
 [dependencies]
 tokio = { version="0.2", features=["io-driver"] }
