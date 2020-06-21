@@ -4,7 +4,7 @@ Asynchronous pipe(2) library using tokio.
 
 ## Example
 
-```
+```rust
 use tokio::prelude::*;
 
 #[tokio::main]
@@ -19,5 +19,5 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-//! ```
+```
 
