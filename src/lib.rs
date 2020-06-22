@@ -295,4 +295,46 @@ mod tests {
         });
         tokio::try_join!(w_task, r_task).unwrap();
     }
+
+    #[tokio::test]
+    async fn test_buf() {
+        let (mut r, mut w) = pipe().unwrap();
+
+        let w_task = tokio::spawn(async move {
+            for _ in 0..16384 {
+                w.write_buf(&mut &[0u8; 8 * 1024][..]).await.unwrap();
+            }
+            //w.shutdown().await.unwrap();
+        });
+
+        let r_task = tokio::spawn(async move {
+            let mut buf = bytes::BytesMut::with_capacity(8 * 1024);
+            while r.read_buf(&mut buf).await.unwrap() != 0 {
+                assert!(buf.iter().all(|n| *n == 0));
+                buf.clear()
+            }
+        });
+        tokio::try_join!(w_task, r_task).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_non_buf() {
+        let (mut r, mut w) = pipe().unwrap();
+
+        let w_task = tokio::spawn(async move {
+            for _ in 0..16384 {
+                w.write(&[0u8; 8 * 1024][..]).await.unwrap();
+            }
+            //w.shutdown().await.unwrap();
+        });
+
+        let r_task = tokio::spawn(async move {
+            let mut buf = [1u8; 8 * 1024];
+            while r.read(&mut buf).await.unwrap() != 0 {
+                assert!(buf.iter().all(|n| *n == 0));
+                buf = [1u8; 8 * 1024];
+            }
+        });
+        tokio::try_join!(w_task, r_task).unwrap();
+    }
 }
