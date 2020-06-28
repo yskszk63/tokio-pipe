@@ -182,7 +182,10 @@ impl AsyncWrite for PipeWrite {
         Pin::new(&mut self.0).poll_flush(cx)
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), io::Error>> {
         Pin::new(&mut self.0).poll_shutdown(cx)
     }
 }
