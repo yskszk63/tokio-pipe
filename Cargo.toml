@@ -14,8 +14,8 @@ categories = ["asynchronous"]
 tokio = { version="0.2", features=["io-driver"] }
 libc = "0.2"
 mio = "0.6"
-bytes = "0.5"
 
 [dev-dependencies]
 tokio = { version="0.2", features=["macros", "rt-core", "io-util"] }
 anyhow = "1.0"
+bytes = "0.5"

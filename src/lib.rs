@@ -23,12 +23,11 @@ use std::cmp;
 use std::ffi::c_void;
 use std::fmt;
 use std::io;
-use std::mem::{self, MaybeUninit};
+use std::mem;
 use std::os::unix::io::{AsRawFd, IntoRawFd, RawFd};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use bytes::{Buf, BufMut};
 use mio::event::Evented;
 use mio::unix::EventedFd;
 use mio::{Poll as MioPoll, PollOpt, Ready, Token};
@@ -82,20 +81,6 @@ impl io::Read for PipeFd {
         }
         Ok(ret as usize)
     }
-
-    fn read_vectored(&mut self, bufs: &mut [io::IoSliceMut<'_>]) -> io::Result<usize> {
-        let ret = unsafe {
-            libc::readv(
-                self.0,
-                bufs.as_ptr() as *const libc::iovec,
-                cmp::min(bufs.len(), libc::c_int::MAX as usize) as libc::c_int,
-            )
-        };
-        if ret == -1 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(ret as usize)
-    }
 }
 
 impl io::Write for PipeFd {
@@ -105,20 +90,6 @@ impl io::Write for PipeFd {
                 self.0,
                 buf.as_ptr() as *mut c_void,
                 cmp::min(buf.len(), MAX_LEN),
-            )
-        };
-        if ret == -1 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(ret as usize)
-    }
-
-    fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
-        let ret = unsafe {
-            libc::writev(
-                self.0,
-                bufs.as_ptr() as *const libc::iovec,
-                cmp::min(bufs.len(), libc::c_int::MAX as usize) as libc::c_int,
             )
         };
         if ret == -1 {
@@ -158,21 +129,6 @@ impl AsyncRead for PipeRead {
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         Pin::new(&mut self.0).poll_read(cx, buf)
-    }
-
-    fn poll_read_buf<B: BufMut>(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut B,
-    ) -> Poll<io::Result<usize>>
-    where
-        Self: Sized,
-    {
-        Pin::new(&mut self.0).poll_read_buf(cx, buf)
-    }
-
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
-        self.0.prepare_uninitialized_buffer(buf)
     }
 }
 
@@ -226,19 +182,8 @@ impl AsyncWrite for PipeWrite {
         Pin::new(&mut self.0).poll_flush(cx)
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        Poll::Ready(self.0.get_mut().close())
-    }
-
-    fn poll_write_buf<B: Buf>(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut B,
-    ) -> Poll<Result<usize, io::Error>>
-    where
-        Self: Sized,
-    {
-        Pin::new(&mut self.0).poll_write_buf(cx, buf)
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        Pin::new(&mut self.0).poll_shutdown(cx)
     }
 }
 
@@ -336,5 +281,15 @@ mod tests {
             }
         });
         tokio::try_join!(w_task, r_task).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_write_after_shutdown() {
+        let (r, mut w) = pipe().unwrap();
+        w.shutdown().await.unwrap();
+        let result = w.write(b"ok").await;
+        assert!(result.is_ok());
+
+        drop(r)
     }
 }
