@@ -24,7 +24,7 @@ use std::ffi::c_void;
 use std::fmt;
 use std::io;
 use std::mem;
-use std::os::unix::io::{AsRawFd, IntoRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -38,6 +38,10 @@ const MAX_LEN: usize = <libc::c_int>::MAX as usize - 1;
 
 #[cfg(not(target_os = "macos"))]
 const MAX_LEN: usize = <libc::ssize_t>::MAX as usize;
+
+unsafe fn set_nonblocking(fd: RawFd) {
+    libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK);
+}
 
 struct PipeFd(RawFd);
 
@@ -146,6 +150,13 @@ impl IntoRawFd for PipeRead {
     }
 }
 
+impl FromRawFd for PipeRead {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        set_nonblocking(fd);
+        PipeRead(PollEvented::new(PipeFd(fd)).unwrap())
+    }
+}
+
 impl fmt::Debug for PipeRead {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "PipeRead({})", self.as_raw_fd())
@@ -166,6 +177,13 @@ impl IntoRawFd for PipeWrite {
         let fd = self.0.get_ref().0;
         mem::forget(self);
         fd
+    }
+}
+
+impl FromRawFd for PipeWrite {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        set_nonblocking(fd);
+        PipeWrite(PollEvented::new(PipeFd(fd)).unwrap())
     }
 }
 
