@@ -242,7 +242,7 @@ fn sys_pipe() -> io::Result<(RawFd, RawFd)> {
         let ret = try_libc!(unsafe { libc::fcntl(*fd, libc::F_GETFD) });
         try_libc!(unsafe { libc::fcntl(*fd, libc::F_SETFD, ret | libc::FD_CLOEXEC) });
         let ret = try_libc!(unsafe { libc::fcntl(*fd, libc::F_GETFL) });
-        try_libc!(unsafe { libc::fcntl(*fd, libc::F_SETFD, ret | libc::O_NONBLOCK) });
+        try_libc!(unsafe { libc::fcntl(*fd, libc::F_SETFL, ret | libc::O_NONBLOCK) });
     }
     Ok((pipefd[0], pipefd[1]))
 }
