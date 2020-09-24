@@ -1,4 +1,4 @@
-#![doc(html_root_url = "https://docs.rs/tokio-pipe/0.1.4")]
+#![doc(html_root_url = "https://docs.rs/tokio-pipe/0.1.5")]
 //! Asynchronous pipe(2) library using tokio.
 //!
 //! # Example
