@@ -43,6 +43,16 @@ unsafe fn set_nonblocking(fd: RawFd) {
     libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK);
 }
 
+macro_rules! try_libc {
+    ($e: expr) => {{
+        let ret = $e;
+        if ret == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        ret
+    }};
+}
+
 struct PipeFd(RawFd);
 
 impl Evented for PipeFd {
@@ -214,11 +224,25 @@ impl fmt::Debug for PipeWrite {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "solaris"))]
 fn sys_pipe() -> io::Result<(RawFd, RawFd)> {
     let mut pipefd = [0; 2];
     let ret = unsafe { libc::pipe2(pipefd.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) };
     if ret == -1 {
         return Err(io::Error::last_os_error());
+    }
+    Ok((pipefd[0], pipefd[1]))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "solaris")))]
+fn sys_pipe() -> io::Result<(RawFd, RawFd)> {
+    let mut pipefd = [0; 2];
+    try_libc!(unsafe { libc::pipe(pipefd.as_mut_ptr()) });
+    for fd in &pipefd {
+        let ret = try_libc!(unsafe { libc::fcntl(*fd, libc::F_GETFD) });
+        try_libc!(unsafe { libc::fcntl(*fd, libc::F_SETFD, ret | libc::FD_CLOEXEC) });
+        let ret = try_libc!(unsafe { libc::fcntl(*fd, libc::F_GETFL) });
+        try_libc!(unsafe { libc::fcntl(*fd, libc::F_SETFL, ret | libc::O_NONBLOCK) });
     }
     Ok((pipefd[0], pipefd[1]))
 }
