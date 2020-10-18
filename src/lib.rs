@@ -43,6 +43,7 @@ unsafe fn set_nonblocking(fd: RawFd) {
     libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK);
 }
 
+#[cfg(not(any(target_os = "linux", target_os = "solaris")))]
 macro_rules! try_libc {
     ($e: expr) => {{
         let ret = $e;
