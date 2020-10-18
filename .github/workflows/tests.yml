@@ -61,20 +61,9 @@ jobs:
 
     - uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
+        toolchain: nightly
         override: true
         profile: minimal
-        components: rustfmt, clippy
-
-    - name: Run grcov
-      run: |
-        cargo +nightly build
-        cargo +nightly test
-        grcov ./target/debug -s src -t lcov --llvm --branch --ignore-not-existing -o lcov.info --excl-br-line "#\[derive\(" --excl-line "#\[derive\(" --excl-br-start "mod tests \{" --excl-start "mod tests \{"
-      env:
-        CARGO_INCREMENTAL: "0"
-        RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
-        RUSTDOCFLAGS: "-Cpanic=abort"
 
     - name: Tests
       uses: actions-rs/cargo@v1
