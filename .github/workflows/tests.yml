@@ -3,25 +3,68 @@ name: tests
 on: push
 
 jobs:
-  tests:
+  check:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
 
-    - name: Install rust nightly
-      run: rustup install nightly
-
-    - name: Install grcov
-      run: |
-        mkdir $HOME/grcov
-        curl -SsL "$GRCOV_URL" | tar -jxf - -C $HOME/grcov
-        chmod +x $HOME/grcov/grcov
-        echo "::add-path::$HOME/grcov"
-      env:
-        GRCOV_URL: 'https://github.com/mozilla/grcov/releases/download/v0.5.15/grcov-linux-x86_64.tar.bz2'
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        profile: minimal
+        components: rustfmt, clippy
 
     - name: Check format
-      run: cargo fmt -- --check
+      uses: actions-rs/cargo@v1
+      with:
+        command: fmt
+        args: -- --check
+
+    - name: Annotate commit with clippy warnings
+      uses: actions-rs/clippy-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        args: --all-features
+
+    - name: Security audit
+      uses: actions-rs/audit-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        profile: minimal
+
+    - name: Tests
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --no-fail-fast
+
+  cov:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        profile: minimal
+        components: rustfmt, clippy
 
     - name: Run grcov
       run: |
@@ -33,8 +76,22 @@ jobs:
         RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
         RUSTDOCFLAGS: "-Cpanic=abort"
 
-
-    - uses: codecov/codecov-action@v1
+    - name: Tests
+      uses: actions-rs/cargo@v1
       with:
-        file: ./lcov.info
+        command: test
+        args: --no-fail-fast
+      env:
+        CARGO_INCREMENTAL: '0'
+        RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
+        RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
+
+    - id: coverage
+      name: Coverage
+      uses: actions-rs/grcov@v0.1
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v1
+      with:
+        file: ${{ steps.coverage.outputs.report }}
 # vim: set sw=2 ts=2 sts=2:
