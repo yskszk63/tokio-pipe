@@ -28,8 +28,8 @@ use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::io::unix::AsyncFd;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 #[cfg(target_os = "macos")]
 const MAX_LEN: usize = <libc::c_int>::MAX as usize - 1;
@@ -60,7 +60,7 @@ macro_rules! cvt {
         } else {
             Ok(ret)
         }
-    }}
+    }};
 }
 
 macro_rules! ready {
@@ -69,7 +69,7 @@ macro_rules! ready {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(e) => e,
         }
-    }
+    };
 }
 
 fn is_woldblock(err: &io::Error) -> bool {
@@ -88,9 +88,7 @@ impl AsRawFd for PipeFd {
 
 impl Drop for PipeFd {
     fn drop(&mut self) {
-        let _ = unsafe {
-            libc::close(self.0)
-        };
+        let _ = unsafe { libc::close(self.0) };
     }
 }
 
@@ -119,16 +117,14 @@ impl AsyncRead for PipeRead {
                 Err(e) if is_woldblock(&e) => {
                     ready.clear_ready();
                 }
-                Err(e) => {
-                    return Poll::Ready(Err(e))
-                }
+                Err(e) => return Poll::Ready(Err(e)),
                 Ok(ret) => {
                     let ret = ret as usize;
                     unsafe {
                         buf.assume_init(ret);
                     };
                     buf.advance(ret);
-                    return Poll::Ready(Ok(()))
+                    return Poll::Ready(Ok(()));
                 }
             }
         }
@@ -210,12 +206,8 @@ impl AsyncWrite for PipeWrite {
                 Err(e) if is_woldblock(&e) => {
                     ready.clear_ready();
                 }
-                Err(e) => {
-                    return Poll::Ready(Err(e))
-                }
-                Ok(ret) => {
-                    return Poll::Ready(Ok(ret as usize))
-                }
+                Err(e) => return Poll::Ready(Err(e)),
+                Ok(ret) => return Poll::Ready(Ok(ret as usize)),
             }
         }
     }
@@ -224,10 +216,7 @@ impl AsyncWrite for PipeWrite {
         Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<(), io::Error>> {
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         Poll::Ready(Ok(()))
     }
 }
