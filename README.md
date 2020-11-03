@@ -1,6 +1,7 @@
 # tokio-pipe
 
 [![tokio-pipe](https://docs.rs/tokio-pipe/badge.svg)](https://docs.rs/tokio-pipe)
+[![dependency status](https://deps.rs/repo/github/yskszk63/tokio-pipe/status.svg)](https://deps.rs/repo/github/yskszk63/tokio-pipe)
 
 Asynchronous pipe(2) library using tokio.
 
