@@ -15,10 +15,10 @@ async fn main() -> anyhow::Result<()> {
 
     w.write_all(b"HELLO, WORLD!").await?;
 
-    let mut buf = bytes::BytesMut::with_capacity(100);
-    r.read_buf(&mut buf).await?;
-    assert_eq!(&buf, &b"HELLO, WORLD!"[..]);
+    let mut buf = [0; 16];
+    let len = r.read(&mut buf[..]).await?;
 
+    assert_eq!(&buf[..len], &b"HELLO, WORLD!"[..]);
     Ok(())
 }
 ```

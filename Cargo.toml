@@ -11,11 +11,9 @@ keywords = ["tokio", "pipe", "async"]
 categories = ["asynchronous"]
 
 [dependencies]
-tokio = { version="0.2", features=["io-driver"] }
+tokio = { version="0.3", features=["net"] }
 libc = "0.2"
-mio = "0.6"
 
 [dev-dependencies]
-tokio = { version="0.2", features=["macros", "rt-core", "io-util"] }
+tokio = { version="0.3", features=["macros", "rt-multi-thread", "io-util"] }
 anyhow = "1.0"
-bytes = "0.5"

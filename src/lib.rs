@@ -12,10 +12,10 @@
 //!
 //!     w.write_all(b"HELLO, WORLD!").await?;
 //!
-//!     let mut buf = bytes::BytesMut::with_capacity(100);
-//!     r.read_buf(&mut buf).await?;
+//!     let mut buf = [0; 16];
+//!     let len = r.read(&mut buf[..]).await?;
 //!
-//!     assert_eq!(&buf, &b"HELLO, WORLD!"[..]);
+//!     assert_eq!(&buf[..len], &b"HELLO, WORLD!"[..]);
 //!     Ok(())
 //! }
 //! ```
@@ -28,10 +28,8 @@ use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use mio::event::Evented;
-use mio::unix::EventedFd;
-use mio::{Poll as MioPoll, PollOpt, Ready, Token};
-use tokio::io::{AsyncRead, AsyncWrite, PollEvented};
+use tokio::io::unix::AsyncFd;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 #[cfg(target_os = "macos")]
 const MAX_LEN: usize = <libc::c_int>::MAX as usize - 1;
@@ -54,109 +52,96 @@ macro_rules! try_libc {
     }};
 }
 
+macro_rules! cvt {
+    ($e:expr) => {{
+        let ret = $e;
+        if ret == -1 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(ret)
+        }
+    }};
+}
+
+macro_rules! ready {
+    ($e:expr) => {
+        match $e {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(e) => e,
+        }
+    };
+}
+
+fn is_woldblock(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::WouldBlock
+}
+
+// needs impl AsRawFd for RawFd (^v1.48)
+#[derive(Debug)]
 struct PipeFd(RawFd);
 
-impl Evented for PipeFd {
-    fn register(
-        &self,
-        poll: &MioPoll,
-        token: Token,
-        interest: Ready,
-        opts: PollOpt,
-    ) -> io::Result<()> {
-        EventedFd(&self.0).register(poll, token, interest, opts)
-    }
-
-    fn reregister(
-        &self,
-        poll: &MioPoll,
-        token: Token,
-        interest: Ready,
-        opts: PollOpt,
-    ) -> io::Result<()> {
-        EventedFd(&self.0).reregister(poll, token, interest, opts)
-    }
-
-    fn deregister(&self, poll: &MioPoll) -> io::Result<()> {
-        EventedFd(&self.0).deregister(poll)
-    }
-}
-
-impl io::Read for PipeFd {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let ret = unsafe {
-            libc::read(
-                self.0,
-                buf.as_mut_ptr() as *mut c_void,
-                cmp::min(buf.len(), MAX_LEN),
-            )
-        };
-        if ret == -1 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(ret as usize)
-    }
-}
-
-impl io::Write for PipeFd {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let ret = unsafe {
-            libc::write(
-                self.0,
-                buf.as_ptr() as *mut c_void,
-                cmp::min(buf.len(), MAX_LEN),
-            )
-        };
-        if ret == -1 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(ret as usize)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl PipeFd {
-    fn close(&mut self) -> io::Result<()> {
-        let ret = unsafe { libc::close(self.0) };
-        if ret == -1 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(())
+impl AsRawFd for PipeFd {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0
     }
 }
 
 impl Drop for PipeFd {
     fn drop(&mut self) {
-        self.close().ok();
+        let _ = unsafe { libc::close(self.0) };
     }
 }
 
 /// Pipe read
-pub struct PipeRead(PollEvented<PipeFd>);
+pub struct PipeRead(AsyncFd<PipeFd>);
 
 impl AsyncRead for PipeRead {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.0).poll_read(cx, buf)
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let fd = self.0.as_raw_fd();
+
+        loop {
+            let pinned = Pin::new(&mut self.0);
+            let mut ready = ready!(pinned.poll_read_ready(cx))?;
+            let ret = unsafe {
+                libc::read(
+                    fd,
+                    buf.unfilled_mut() as *mut _ as *mut c_void,
+                    cmp::min(buf.remaining(), MAX_LEN),
+                )
+            };
+            match cvt!(ret) {
+                Err(e) if is_woldblock(&e) => {
+                    ready.clear_ready();
+                }
+                Err(e) => return Poll::Ready(Err(e)),
+                Ok(ret) => {
+                    let ret = ret as usize;
+                    unsafe {
+                        buf.assume_init(ret);
+                    };
+                    buf.advance(ret);
+                    return Poll::Ready(Ok(()));
+                }
+            }
+        }
     }
 }
 
 impl AsRawFd for PipeRead {
     fn as_raw_fd(&self) -> RawFd {
-        self.0.get_ref().0
+        self.0.as_raw_fd()
     }
 }
 
 impl IntoRawFd for PipeRead {
     fn into_raw_fd(self) -> RawFd {
-        let fd = self.0.get_ref().0;
-        mem::forget(self);
+        let inner = self.0.into_inner();
+        let fd = inner.0;
+        mem::forget(inner);
         fd
     }
 }
@@ -164,7 +149,7 @@ impl IntoRawFd for PipeRead {
 impl FromRawFd for PipeRead {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         set_nonblocking(fd);
-        PipeRead(PollEvented::new(PipeFd(fd)).unwrap())
+        Self(AsyncFd::new(PipeFd(fd)).unwrap())
     }
 }
 
@@ -175,18 +160,19 @@ impl fmt::Debug for PipeRead {
 }
 
 /// Pipe write
-pub struct PipeWrite(PollEvented<PipeFd>);
+pub struct PipeWrite(AsyncFd<PipeFd>);
 
 impl AsRawFd for PipeWrite {
     fn as_raw_fd(&self) -> RawFd {
-        self.0.get_ref().0
+        self.0.as_raw_fd()
     }
 }
 
 impl IntoRawFd for PipeWrite {
     fn into_raw_fd(self) -> RawFd {
-        let fd = self.0.get_ref().0;
-        mem::forget(self);
+        let inner = self.0.into_inner();
+        let fd = inner.0;
+        mem::forget(inner);
         fd
     }
 }
@@ -194,7 +180,7 @@ impl IntoRawFd for PipeWrite {
 impl FromRawFd for PipeWrite {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         set_nonblocking(fd);
-        PipeWrite(PollEvented::new(PipeFd(fd)).unwrap())
+        Self(AsyncFd::new(PipeFd(fd)).unwrap())
     }
 }
 
@@ -204,18 +190,34 @@ impl AsyncWrite for PipeWrite {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        Pin::new(&mut self.0).poll_write(cx, buf)
+        let fd = self.0.as_raw_fd();
+
+        loop {
+            let pinned = Pin::new(&mut self.0);
+            let mut ready = ready!(pinned.poll_write_ready(cx))?;
+            let ret = unsafe {
+                libc::write(
+                    fd,
+                    buf.as_ptr() as *mut c_void,
+                    cmp::min(buf.len(), MAX_LEN),
+                )
+            };
+            match cvt!(ret) {
+                Err(e) if is_woldblock(&e) => {
+                    ready.clear_ready();
+                }
+                Err(e) => return Poll::Ready(Err(e)),
+                Ok(ret) => return Poll::Ready(Ok(ret as usize)),
+            }
+        }
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        Pin::new(&mut self.0).poll_flush(cx)
+    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), io::Error>> {
-        Pin::new(&mut self.0).poll_shutdown(cx)
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -252,8 +254,8 @@ fn sys_pipe() -> io::Result<(RawFd, RawFd)> {
 pub fn pipe() -> io::Result<(PipeRead, PipeWrite)> {
     let (r, w) = sys_pipe()?;
     Ok((
-        PipeRead(PollEvented::new(PipeFd(r))?),
-        PipeWrite(PollEvented::new(PipeFd(w))?),
+        PipeRead(AsyncFd::new(PipeFd(r))?),
+        PipeWrite(AsyncFd::new(PipeFd(w))?),
     ))
 }
 
@@ -267,7 +269,7 @@ mod tests {
         let (mut r, mut w) = pipe().unwrap();
 
         let w_task = tokio::spawn(async move {
-            for n in 0..65535 {
+            for n in 0..=65535 {
                 w.write_u32(n).await.unwrap();
             }
             //w.shutdown().await.unwrap();
@@ -275,55 +277,13 @@ mod tests {
 
         let r_task = tokio::spawn(async move {
             let mut n = 0u32;
-            let mut buf = bytes::BytesMut::with_capacity(4 * 100);
-            while r.read_buf(&mut buf).await.unwrap() != 0 {
+            let mut buf = [0; 4 * 128];
+            while n < 65535 {
+                r.read_exact(&mut buf).await.unwrap();
                 for x in buf.chunks(4) {
                     assert_eq!(x, n.to_be_bytes());
                     n += 1;
                 }
-                buf.clear()
-            }
-        });
-        tokio::try_join!(w_task, r_task).unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_buf() {
-        let (mut r, mut w) = pipe().unwrap();
-
-        let w_task = tokio::spawn(async move {
-            for _ in 0..16384 {
-                w.write_buf(&mut &[0u8; 8 * 1024][..]).await.unwrap();
-            }
-            //w.shutdown().await.unwrap();
-        });
-
-        let r_task = tokio::spawn(async move {
-            let mut buf = bytes::BytesMut::with_capacity(8 * 1024);
-            while r.read_buf(&mut buf).await.unwrap() != 0 {
-                assert!(buf.iter().all(|n| *n == 0));
-                buf.clear()
-            }
-        });
-        tokio::try_join!(w_task, r_task).unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_non_buf() {
-        let (mut r, mut w) = pipe().unwrap();
-
-        let w_task = tokio::spawn(async move {
-            for _ in 0..16384 {
-                w.write(&[0u8; 8 * 1024][..]).await.unwrap();
-            }
-            //w.shutdown().await.unwrap();
-        });
-
-        let r_task = tokio::spawn(async move {
-            let mut buf = [1u8; 8 * 1024];
-            while r.read(&mut buf).await.unwrap() != 0 {
-                assert!(buf.iter().all(|n| *n == 0));
-                buf = [1u8; 8 * 1024];
             }
         });
         tokio::try_join!(w_task, r_task).unwrap();
