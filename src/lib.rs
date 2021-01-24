@@ -4,7 +4,7 @@
 //! # Example
 //!
 //! ```
-//! use tokio::prelude::*;
+//! use tokio::io::{AsyncReadExt, AsyncWriteExt};
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
@@ -262,7 +262,7 @@ pub fn pipe() -> io::Result<(PipeRead, PipeWrite)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::prelude::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[tokio::test]
     async fn test() {
