@@ -72,7 +72,7 @@ macro_rules! ready {
     };
 }
 
-fn is_woldblock(err: &io::Error) -> bool {
+fn is_wouldblock(err: &io::Error) -> bool {
     err.kind() == io::ErrorKind::WouldBlock
 }
 
@@ -114,7 +114,7 @@ impl AsyncRead for PipeRead {
                 )
             };
             match cvt!(ret) {
-                Err(e) if is_woldblock(&e) => {
+                Err(e) if is_wouldblock(&e) => {
                     ready.clear_ready();
                 }
                 Err(e) => return Poll::Ready(Err(e)),
@@ -203,7 +203,7 @@ impl AsyncWrite for PipeWrite {
                 )
             };
             match cvt!(ret) {
-                Err(e) if is_woldblock(&e) => {
+                Err(e) if is_wouldblock(&e) => {
                     ready.clear_ready();
                 }
                 Err(e) => return Poll::Ready(Err(e)),
