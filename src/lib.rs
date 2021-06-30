@@ -298,4 +298,96 @@ mod tests {
 
         drop(r)
     }
+
+    #[tokio::test]
+    async fn test_read_to_end() -> io::Result<()> {
+        let (mut r, mut w) = pipe()?;
+        let t = tokio::spawn(async move {
+            w.write_all(&b"Hello, World!"[..]).await?;
+            io::Result::Ok(())
+        });
+
+        let mut buf = vec![];
+        r.read_to_end(&mut buf).await?;
+        assert_eq!(&b"Hello, World!"[..], &buf);
+
+        t.await?
+    }
+
+    #[tokio::test]
+    async fn test_from_child_stdio() -> io::Result<()> {
+        use std::process::Stdio;
+        use tokio::process::Command;
+
+        let (mut r, w) = pipe()?;
+
+        let script = r#"#!/usr/bin/env python3
+import os
+with os.fdopen(1, 'wb') as w:
+    w.write(b"Hello, World!")
+"#;
+
+        let mut command = Command::new("python");
+        command
+            .args(["-c", script])
+            .stdout(unsafe { Stdio::from_raw_fd(w.as_raw_fd()) });
+        unsafe {
+            command.pre_exec(|| Ok(()));
+        }
+        let mut child = command.spawn()?;
+        drop(w);
+
+        let mut buf = vec![];
+        r.read_to_end(&mut buf).await?;
+        assert_eq!(&b"Hello, World!"[..], &buf);
+
+        child.wait().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_from_child_no_stdio() -> io::Result<()> {
+        use libc::{close, dup, dup2};
+        use tokio::process::Command;
+
+        let (mut r, w) = pipe()?;
+
+        let script = r#"#!/usr/bin/env python3
+import os
+with os.fdopen(3, 'wb') as w:
+    w.write(b"Hello, World!")
+"#;
+
+        let mut command = Command::new("python");
+        command.args(["-c", script]);
+        unsafe {
+            let w = w.as_raw_fd();
+            command.pre_exec(move || {
+                let drop_cloexec = dup(w);
+                if drop_cloexec == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                let r = dup2(drop_cloexec, 3);
+                if r == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                if close(drop_cloexec) == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                if close(w) == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let mut child = command.spawn()?;
+        drop(w);
+
+        let mut buf = vec![];
+        r.read_to_end(&mut buf).await?;
+        assert_eq!(&b"Hello, World!"[..], &buf);
+
+        child.wait().await?;
+        Ok(())
+    }
 }
