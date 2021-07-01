@@ -332,6 +332,7 @@ with os.fdopen(1, 'wb') as w:
             .args(["-c", script])
             .stdout(unsafe { Stdio::from_raw_fd(w.as_raw_fd()) });
         unsafe {
+            // suppress posix_spawn
             command.pre_exec(|| Ok(()));
         }
         let mut child = command.spawn()?;
@@ -347,7 +348,6 @@ with os.fdopen(1, 'wb') as w:
 
     #[tokio::test]
     async fn test_from_child_no_stdio() -> io::Result<()> {
-        use libc::{close, dup, dup2};
         use tokio::process::Command;
 
         let (mut r, w) = pipe()?;
@@ -363,19 +363,22 @@ with os.fdopen(3, 'wb') as w:
         unsafe {
             let w = w.as_raw_fd();
             command.pre_exec(move || {
-                let drop_cloexec = dup(w);
-                if drop_cloexec == -1 {
-                    return Err(io::Error::last_os_error());
-                }
-                let r = dup2(drop_cloexec, 3);
-                if r == -1 {
-                    return Err(io::Error::last_os_error());
-                }
-                if close(drop_cloexec) == -1 {
-                    return Err(io::Error::last_os_error());
-                }
-                if close(w) == -1 {
-                    return Err(io::Error::last_os_error());
+                if w == 3 {
+                    // drop CLOEXEC
+                    let flags = libc::fcntl(w, libc::F_SETFD);
+                    if flags == -1 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    if flags & libc::FD_CLOEXEC != 0
+                        && libc::fcntl(w, libc::F_SETFD, flags ^ libc::FD_CLOEXEC) == -1
+                    {
+                        return Err(io::Error::last_os_error());
+                    }
+                } else {
+                    let r = libc::dup2(w, 3);
+                    if r == -1 {
+                        return Err(io::Error::last_os_error());
+                    }
                 }
                 Ok(())
             });
