@@ -1,6 +1,6 @@
 [package]
 name = "tokio-pipe"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["yskszk63 <yskszk63@gmail.com>"]
 edition = "2018"
 description = "Asynchronous pipe(2) library using tokio."
@@ -9,11 +9,12 @@ repository = "https://github.com/yskszk63/tokio-pipe"
 readme = "README.md"
 keywords = ["tokio", "pipe", "async"]
 categories = ["asynchronous"]
+rust-version = "1.45"
 
 [dependencies]
-tokio = { version="1.4", features=["net"] }
+tokio = { version="1.12", features=["net"] }
 libc = "0.2"
 
 [dev-dependencies]
-tokio = { version="1.4", features=["macros", "rt-multi-thread", "io-util", "process"] }
+tokio = { version="1.12", features=["macros", "rt-multi-thread", "io-util", "process"] }
 anyhow = "1.0"
