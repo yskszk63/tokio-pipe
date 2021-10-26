@@ -44,12 +44,15 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
+        rust-version:
+          - stable
+          - 1.45
     steps:
     - uses: actions/checkout@v2
 
     - uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
+        toolchain: ${{ matrix.rust-version }}
         override: true
         profile: minimal
 
@@ -69,20 +72,16 @@ jobs:
         toolchain: nightly
         override: true
         profile: minimal
+        components: llvm-tools-preview
+
+    - name: Install cargo-llvm-cov
+      run: curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin
 
     - name: Tests
       uses: actions-rs/cargo@v1
       with:
-        command: test
-        args: --no-fail-fast
-      env:
-        CARGO_INCREMENTAL: '0'
-        RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
-        RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
-
-    - id: coverage
-      name: Coverage
-      uses: actions-rs/grcov@v0.1
+        command: llvm-cov
+        args: --all-features --workspace --lcov --output-path lcov.info
 
     - name: Upload coverage
       uses: codecov/codecov-action@v1
