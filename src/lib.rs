@@ -309,7 +309,7 @@ mod tests {
 
         let mut buf = vec![];
         r.read_to_end(&mut buf).await?;
-        assert_eq!(&b"Hello, World!"[..], &buf);
+        assert_eq!(&b"Hello, World!"[..], &buf[..]);
 
         t.await?
     }
@@ -329,7 +329,7 @@ with os.fdopen(1, 'wb') as w:
 
         let mut command = Command::new("python");
         command
-            .args(["-c", script])
+            .args(&["-c", script])
             .stdout(unsafe { Stdio::from_raw_fd(w.as_raw_fd()) });
         unsafe {
             // suppress posix_spawn
@@ -340,7 +340,7 @@ with os.fdopen(1, 'wb') as w:
 
         let mut buf = vec![];
         r.read_to_end(&mut buf).await?;
-        assert_eq!(&b"Hello, World!"[..], &buf);
+        assert_eq!(&b"Hello, World!"[..], &buf[..]);
 
         child.wait().await?;
         Ok(())
@@ -359,7 +359,7 @@ with os.fdopen(3, 'wb') as w:
 "#;
 
         let mut command = Command::new("python");
-        command.args(["-c", script]);
+        command.args(&["-c", script]);
         unsafe {
             let w = w.as_raw_fd();
             command.pre_exec(move || {
@@ -388,7 +388,7 @@ with os.fdopen(3, 'wb') as w:
 
         let mut buf = vec![];
         r.read_to_end(&mut buf).await?;
-        assert_eq!(&b"Hello, World!"[..], &buf);
+        assert_eq!(&b"Hello, World!"[..], &buf[..]);
 
         child.wait().await?;
         Ok(())
