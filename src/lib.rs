@@ -1,4 +1,5 @@
-#![doc(html_root_url = "https://docs.rs/tokio-pipe/0.2.2")]
+#![doc(html_root_url = "https://docs.rs/tokio-pipe/0.3.0")]
+#![feature(io_safety)]
 //! Asynchronous pipe(2) library using tokio.
 //!
 //! # Example
@@ -23,8 +24,7 @@ use std::cmp;
 use std::ffi::c_void;
 use std::fmt;
 use std::io;
-use std::mem;
-use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -76,24 +76,8 @@ fn is_wouldblock(err: &io::Error) -> bool {
     err.kind() == io::ErrorKind::WouldBlock
 }
 
-// needs impl AsRawFd for RawFd (^v1.48)
-#[derive(Debug)]
-struct PipeFd(RawFd);
-
-impl AsRawFd for PipeFd {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0
-    }
-}
-
-impl Drop for PipeFd {
-    fn drop(&mut self) {
-        let _ = unsafe { libc::close(self.0) };
-    }
-}
-
 /// Pipe read
-pub struct PipeRead(AsyncFd<PipeFd>);
+pub struct PipeRead(AsyncFd<OwnedFd>);
 
 impl AsyncRead for PipeRead {
     fn poll_read(
@@ -140,16 +124,20 @@ impl AsRawFd for PipeRead {
 impl IntoRawFd for PipeRead {
     fn into_raw_fd(self) -> RawFd {
         let inner = self.0.into_inner();
-        let fd = inner.0;
-        mem::forget(inner);
-        fd
+        inner.into_raw_fd()
     }
 }
 
 impl FromRawFd for PipeRead {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         set_nonblocking(fd);
-        Self(AsyncFd::new(PipeFd(fd)).unwrap())
+        Self(AsyncFd::new(OwnedFd::from_raw_fd(fd)).unwrap())
+    }
+}
+
+impl AsFd for PipeRead {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.0.get_ref().as_fd()
     }
 }
 
@@ -160,7 +148,7 @@ impl fmt::Debug for PipeRead {
 }
 
 /// Pipe write
-pub struct PipeWrite(AsyncFd<PipeFd>);
+pub struct PipeWrite(AsyncFd<OwnedFd>);
 
 impl AsRawFd for PipeWrite {
     fn as_raw_fd(&self) -> RawFd {
@@ -171,16 +159,14 @@ impl AsRawFd for PipeWrite {
 impl IntoRawFd for PipeWrite {
     fn into_raw_fd(self) -> RawFd {
         let inner = self.0.into_inner();
-        let fd = inner.0;
-        mem::forget(inner);
-        fd
+        inner.into_raw_fd()
     }
 }
 
 impl FromRawFd for PipeWrite {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         set_nonblocking(fd);
-        Self(AsyncFd::new(PipeFd(fd)).unwrap())
+        Self(AsyncFd::new(OwnedFd::from_raw_fd(fd)).unwrap())
     }
 }
 
@@ -221,6 +207,12 @@ impl AsyncWrite for PipeWrite {
     }
 }
 
+impl AsFd for PipeWrite {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.0.get_ref().as_fd()
+    }
+}
+
 impl fmt::Debug for PipeWrite {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "PipeRead({})", self.as_raw_fd())
@@ -253,10 +245,12 @@ fn sys_pipe() -> io::Result<(RawFd, RawFd)> {
 /// Open pipe
 pub fn pipe() -> io::Result<(PipeRead, PipeWrite)> {
     let (r, w) = sys_pipe()?;
-    Ok((
-        PipeRead(AsyncFd::new(PipeFd(r))?),
-        PipeWrite(AsyncFd::new(PipeFd(w))?),
-    ))
+    unsafe {
+        Ok((
+            PipeRead(AsyncFd::new(OwnedFd::from_raw_fd(r))?),
+            PipeWrite(AsyncFd::new(OwnedFd::from_raw_fd(w))?),
+        ))
+    }
 }
 
 #[cfg(test)]

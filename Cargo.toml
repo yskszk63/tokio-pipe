@@ -1,15 +1,15 @@
 [package]
 name = "tokio-pipe"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["yskszk63 <yskszk63@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "Asynchronous pipe(2) library using tokio."
 license = "MIT/Apache-2.0"
 repository = "https://github.com/yskszk63/tokio-pipe"
 readme = "README.md"
 keywords = ["tokio", "pipe", "async"]
 categories = ["asynchronous"]
-rust-version = "1.45"
+rust-version = "1.56"
 
 [dependencies]
 tokio = { version="1.12", features=["net"] }

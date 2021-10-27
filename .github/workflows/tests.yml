@@ -45,8 +45,9 @@ jobs:
           - ubuntu-latest
           - macos-latest
         rust-version:
-          - stable
-          - 1.45
+          - nightly
+          #- stable
+          #- 1.45
     steps:
     - uses: actions/checkout@v2
 
