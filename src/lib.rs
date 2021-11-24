@@ -31,6 +31,8 @@ use std::task::{Context, Poll};
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
+pub use libc::PIPE_BUF;
+
 #[cfg(target_os = "macos")]
 const MAX_LEN: usize = <libc::c_int>::MAX as usize - 1;
 
@@ -89,6 +91,19 @@ impl AsRawFd for PipeFd {
 impl Drop for PipeFd {
     fn drop(&mut self) {
         let _ = unsafe { libc::close(self.0) };
+    }
+}
+
+/// A buffer that can be written atomically
+pub struct AtomicWriteBuffer<'a>(&'a [u8]);
+impl<'a> AtomicWriteBuffer<'a> {
+    /// If buffer is more than PIPE_BUF, then return None.
+    pub fn new(buffer: &'a [u8]) -> Option<Self> {
+        if buffer.len() <= PIPE_BUF {
+            Some(Self(buffer))
+        } else {
+            None
+        }
     }
 }
 
@@ -184,16 +199,16 @@ impl FromRawFd for PipeWrite {
     }
 }
 
-impl AsyncWrite for PipeWrite {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
+impl PipeWrite {
+    fn poll_write_impl(
+        self: Pin<&Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
         let fd = self.0.as_raw_fd();
 
         loop {
-            let pinned = Pin::new(&mut self.0);
+            let pinned = Pin::new(&self.0);
             let mut ready = ready!(pinned.poll_write_ready(cx))?;
             let ret = unsafe {
                 libc::write(
@@ -210,6 +225,25 @@ impl AsyncWrite for PipeWrite {
                 Ok(ret) => return Poll::Ready(Ok(ret as usize)),
             }
         }
+    }
+
+    /// Write buf atomically to the pipe, using guarantees provided in POSIX.1
+    pub fn poll_write_atomic(
+        self: Pin<&Self>,
+        cx: &mut Context<'_>,
+        buf: AtomicWriteBuffer,
+    ) -> Poll<Result<usize, io::Error>> {
+        self.poll_write_impl(cx, buf.0)
+    }
+}
+
+impl AsyncWrite for PipeWrite {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        self.as_ref().poll_write_impl(cx, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
