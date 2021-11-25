@@ -127,15 +127,17 @@ async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::R
     let fd_in = pipe_in.0.as_raw_fd();
     let fd_out = pipe_out.0.as_raw_fd();
 
+    // There is only one reader, so it only needs to polled once.
+    let mut _read_ready = pipe_in.0.readable().await?;
+
     loop {
-        let mut read_ready = pipe_in.0.readable().await?;
+        // There could be multiple writers if tee_atomic is used.
         let mut write_ready = pipe_out.0.writable().await?;
 
         let ret = unsafe { libc::tee(fd_in, fd_out, len, libc::SPLICE_F_NONBLOCK) };
         match cvt!(ret) {
             Err(e) if is_wouldblock(&e) => {
-                read_ready.retain_ready();
-                write_ready.retain_ready();
+                write_ready.clear_ready();
             }
             Err(e) => break Err(e),
             Ok(ret) => break Ok(ret as usize),
