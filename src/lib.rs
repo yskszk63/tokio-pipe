@@ -162,9 +162,9 @@ pub async fn tee_atomic(
 pub async fn tee(
     pipe_in: &mut PipeRead,
     pipe_out: &mut PipeWrite,
-    len: AtomicLen,
+    len: usize,
 ) -> io::Result<usize> {
-    tee_impl(pipe_in, pipe_out, len.0).await
+    tee_impl(pipe_in, pipe_out, len).await
 }
 
 fn as_ptr<T>(option: Option<&mut T>) -> *mut T {
