@@ -238,7 +238,7 @@ pub async fn splice(
 /// Pipe read
 pub struct PipeRead(AsyncFd<PipeFd>);
 impl PipeRead {
-    /// Moves data between pipes and fds without copying between kernel address space and
+    /// Moves data between pipe and fd without copying between kernel address space and
     /// user address space.
     ///
     /// It transfers up to len bytes of data from self to asyncfd_out.
