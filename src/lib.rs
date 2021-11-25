@@ -95,6 +95,7 @@ impl Drop for PipeFd {
 }
 
 /// A buffer that can be written atomically
+#[derive(Debug)]
 pub struct AtomicWriteBuffer<'a>(&'a [u8]);
 impl<'a> AtomicWriteBuffer<'a> {
     /// If buffer is more than PIPE_BUF, then return None.
