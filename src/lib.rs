@@ -386,6 +386,32 @@ impl PipeWrite {
         self.poll_write_impl(cx, buf.0)
     }
 
+    async fn splice_from_impl(
+        &self,
+        asyncfd_in: &AsyncFd<impl AsRawFd>,
+        off_in: Option<&mut off64_t>,
+        len: usize,
+    ) -> io::Result<usize> {
+        splice_impl(asyncfd_in, off_in, &self.0, None, len, false).await
+    }
+
+    /// Moves data between fd and pipe without copying between kernel address space and
+    /// user address space.
+    ///
+    /// It transfers up to len bytes of data from asyncfd_in to self.
+    ///
+    ///  * `asyncfd_in` - must be have O_NONBLOCK set,
+    ///    otherwise this function might block.
+    ///  * `off_in` - If it is not None, then it would be updated on success.
+    pub async fn splice_from_atomic(
+        &self,
+        asyncfd_in: &AsyncFd<impl AsRawFd>,
+        off_in: Option<&mut off64_t>,
+        len: AtomicLen,
+    ) -> io::Result<usize> {
+        self.splice_from_impl(asyncfd_in, off_in, len.0).await
+    }
+
     /// Moves data between fd and pipe without copying between kernel address space and
     /// user address space.
     ///
@@ -400,7 +426,7 @@ impl PipeWrite {
         off_in: Option<&mut off64_t>,
         len: usize,
     ) -> io::Result<usize> {
-        splice_impl(asyncfd_in, off_in, &self.0, None, len, false).await
+        self.splice_from_impl(asyncfd_in, off_in, len).await
     }
 }
 
