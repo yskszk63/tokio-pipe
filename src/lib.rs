@@ -237,6 +237,28 @@ pub async fn splice(
 
 /// Pipe read
 pub struct PipeRead(AsyncFd<PipeFd>);
+impl PipeRead {
+    /// Moves data between pipes and fds without copying between kernel address space and
+    /// user address space.
+    ///
+    /// It transfers up to len bytes of data from self to asyncfd_out.
+    ///
+    ///  * `asyncfd_out` - must be have O_NONBLOCK set,
+    ///    otherwise this function might block.
+    ///  * `off_out` - If it is not None, then it would be updated on success.
+    ///  * `has_more_data` - If there is more data to be sent to off_out.
+    ///    This is a helpful hint for socket (see also the description of MSG_MORE
+    ///    in send(2), and the description of TCP_CORK in tcp(7)).
+    pub async fn splice_to(
+        &mut self,
+        asyncfd_out: &AsyncFd<impl AsRawFd>,
+        off_out: Option<&mut off64_t>,
+        len: usize,
+        has_more_data: bool,
+    ) -> io::Result<usize> {
+        splice_impl(&self.0, None, asyncfd_out, off_out, len, has_more_data).await
+    }
+}
 
 impl AsyncRead for PipeRead {
     fn poll_read(
