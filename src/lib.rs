@@ -188,12 +188,18 @@ async fn splice_impl(
     let off_in = as_ptr(off_in);
     let off_out = as_ptr(off_out);
 
+    let flags = libc::SPLICE_F_NONBLOCK
+        | if has_more_data {
+            libc::SPLICE_F_MORE
+        } else {
+            0
+        };
+
     loop {
         let mut read_ready = asyncfd_in.readable().await?;
-        let mut write_ready = asyncfd_out.readable().await?;
+        let mut write_ready = asyncfd_out.writable().await?;
 
-        let ret =
-            unsafe { libc::splice(fd_in, off_in, fd_out, off_out, len, libc::SPLICE_F_NONBLOCK) };
+        let ret = unsafe { libc::splice(fd_in, off_in, fd_out, off_out, len, flags) };
         match cvt!(ret) {
             Err(e) if is_wouldblock(&e) => {
                 read_ready.retain_ready();
@@ -203,6 +209,26 @@ async fn splice_impl(
             Ok(ret) => break Ok(ret as usize),
         }
     }
+}
+
+/// Moves data between pipes without copying between kernel address space and
+/// user address space.
+///
+/// It transfers up to len bytes of data from pipe_in to pipe_out.
+pub async fn splice_atomic(
+    pipe_in: &mut PipeRead,
+    pipe_out: &PipeWrite,
+    len: AtomicLen,
+) -> io::Result<usize> {
+    splice_impl(&pipe_in.0, None, &pipe_out.0, None, len.0, false).await
+}
+
+/// Moves data between pipes without copying between kernel address space and
+/// user address space.
+///
+/// It transfers up to len bytes of data from pipe_in to pipe_out.
+pub async fn splice(pipe_in: &mut PipeRead, pipe_out: &PipeWrite, len: usize) -> io::Result<usize> {
+    splice_impl(&pipe_in.0, None, &pipe_out.0, None, len, false).await
 }
 
 /// Pipe read
