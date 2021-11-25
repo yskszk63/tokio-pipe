@@ -227,7 +227,11 @@ pub async fn splice_atomic(
 /// user address space.
 ///
 /// It transfers up to len bytes of data from pipe_in to pipe_out.
-pub async fn splice(pipe_in: &mut PipeRead, pipe_out: &PipeWrite, len: usize) -> io::Result<usize> {
+pub async fn splice(
+    pipe_in: &mut PipeRead,
+    pipe_out: &mut PipeWrite,
+    len: usize,
+) -> io::Result<usize> {
     splice_impl(&pipe_in.0, None, &pipe_out.0, None, len, false).await
 }
 
