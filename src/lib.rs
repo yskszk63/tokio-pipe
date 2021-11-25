@@ -175,7 +175,7 @@ fn as_ptr<T>(option: Option<&mut T>) -> *mut T {
 }
 
 async fn splice_impl(
-    asyncfd_in: &AsyncFd<impl AsRawFd>,
+    asyncfd_in: &mut AsyncFd<impl AsRawFd>,
     off_in: Option<&mut off64_t>,
     asyncfd_out: &AsyncFd<impl AsRawFd>,
     off_out: Option<&mut off64_t>,
@@ -195,15 +195,18 @@ async fn splice_impl(
             0
         };
 
+    // There is only one reader, so it only needs to polled once.
+    let mut _read_ready = asyncfd_in.readable().await?;
+
     loop {
-        let mut read_ready = asyncfd_in.readable().await?;
+        // There could be multiple writers if splice_atomic or splice_from_atomic
+        // is used.
         let mut write_ready = asyncfd_out.writable().await?;
 
         let ret = unsafe { libc::splice(fd_in, off_in, fd_out, off_out, len, flags) };
         match cvt!(ret) {
             Err(e) if is_wouldblock(&e) => {
-                read_ready.retain_ready();
-                write_ready.retain_ready();
+                write_ready.clear_ready();
             }
             Err(e) => break Err(e),
             Ok(ret) => break Ok(ret as usize),
@@ -220,7 +223,7 @@ pub async fn splice_atomic(
     pipe_out: &PipeWrite,
     len: AtomicLen,
 ) -> io::Result<usize> {
-    splice_impl(&pipe_in.0, None, &pipe_out.0, None, len.0, false).await
+    splice_impl(&mut pipe_in.0, None, &pipe_out.0, None, len.0, false).await
 }
 
 /// Moves data between pipes without copying between kernel address space and
@@ -232,7 +235,7 @@ pub async fn splice(
     pipe_out: &mut PipeWrite,
     len: usize,
 ) -> io::Result<usize> {
-    splice_impl(&pipe_in.0, None, &pipe_out.0, None, len, false).await
+    splice_impl(&mut pipe_in.0, None, &pipe_out.0, None, len, false).await
 }
 
 /// Pipe read
@@ -256,7 +259,7 @@ impl PipeRead {
         len: usize,
         has_more_data: bool,
     ) -> io::Result<usize> {
-        splice_impl(&self.0, None, asyncfd_out, off_out, len, has_more_data).await
+        splice_impl(&mut self.0, None, asyncfd_out, off_out, len, has_more_data).await
     }
 }
 
@@ -388,7 +391,7 @@ impl PipeWrite {
 
     async fn splice_from_impl(
         &self,
-        asyncfd_in: &AsyncFd<impl AsRawFd>,
+        asyncfd_in: &mut AsyncFd<impl AsRawFd>,
         off_in: Option<&mut off64_t>,
         len: usize,
     ) -> io::Result<usize> {
@@ -402,10 +405,11 @@ impl PipeWrite {
     ///
     ///  * `asyncfd_in` - must be have O_NONBLOCK set,
     ///    otherwise this function might block.
+    ///    There must not be other reader for that fd (or its duplicates).
     ///  * `off_in` - If it is not None, then it would be updated on success.
     pub async fn splice_from_atomic(
         &self,
-        asyncfd_in: &AsyncFd<impl AsRawFd>,
+        asyncfd_in: &mut AsyncFd<impl AsRawFd>,
         off_in: Option<&mut off64_t>,
         len: AtomicLen,
     ) -> io::Result<usize> {
@@ -419,10 +423,11 @@ impl PipeWrite {
     ///
     ///  * `asyncfd_in` - must be have O_NONBLOCK set,
     ///    otherwise this function might block.
+    ///    There must not be other reader for that fd (or its duplicates).
     ///  * `off_in` - If it is not None, then it would be updated on success.
     pub async fn splice_from(
         &mut self,
-        asyncfd_in: &AsyncFd<impl AsRawFd>,
+        asyncfd_in: &mut AsyncFd<impl AsRawFd>,
         off_in: Option<&mut off64_t>,
         len: usize,
     ) -> io::Result<usize> {
