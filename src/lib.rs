@@ -26,12 +26,13 @@ use std::io;
 use std::mem;
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::pin::Pin;
+use std::ptr;
 use std::task::{Context, Poll};
 
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-pub use libc::PIPE_BUF;
+pub use libc::{off64_t, PIPE_BUF};
 
 #[cfg(target_os = "macos")]
 const MAX_LEN: usize = <libc::c_int>::MAX as usize - 1;
@@ -127,12 +128,14 @@ async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::R
     let fd_out = pipe_out.0.as_raw_fd();
 
     loop {
-        let mut ready = pipe_in.0.readable().await?;
+        let mut read_ready = pipe_in.0.readable().await?;
+        let mut write_ready = pipe_out.0.writable().await?;
 
         let ret = unsafe { libc::tee(fd_in, fd_out, len, libc::SPLICE_F_NONBLOCK) };
         match cvt!(ret) {
             Err(e) if is_wouldblock(&e) => {
-                ready.retain_ready();
+                read_ready.retain_ready();
+                write_ready.retain_ready();
             }
             Err(e) => break Err(e),
             Ok(ret) => break Ok(ret as usize),
@@ -162,6 +165,44 @@ pub async fn tee(
     len: AtomicLen,
 ) -> io::Result<usize> {
     tee_impl(pipe_in, pipe_out, len.0).await
+}
+
+fn as_ptr<T>(option: Option<&mut T>) -> *mut T {
+    match option {
+        Some(some) => some,
+        None => ptr::null_mut(),
+    }
+}
+
+async fn splice_impl(
+    asyncfd_in: &AsyncFd<impl AsRawFd>,
+    off_in: Option<&mut off64_t>,
+    asyncfd_out: &AsyncFd<impl AsRawFd>,
+    off_out: Option<&mut off64_t>,
+    len: usize,
+    has_more_data: bool,
+) -> io::Result<usize> {
+    let fd_in = asyncfd_in.as_raw_fd();
+    let fd_out = asyncfd_out.as_raw_fd();
+
+    let off_in = as_ptr(off_in);
+    let off_out = as_ptr(off_out);
+
+    loop {
+        let mut read_ready = asyncfd_in.readable().await?;
+        let mut write_ready = asyncfd_out.readable().await?;
+
+        let ret =
+            unsafe { libc::splice(fd_in, off_in, fd_out, off_out, len, libc::SPLICE_F_NONBLOCK) };
+        match cvt!(ret) {
+            Err(e) if is_wouldblock(&e) => {
+                read_ready.retain_ready();
+                write_ready.retain_ready();
+            }
+            Err(e) => break Err(e),
+            Ok(ret) => break Ok(ret as usize),
+        }
+    }
 }
 
 /// Pipe read
