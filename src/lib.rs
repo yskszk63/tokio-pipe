@@ -107,6 +107,62 @@ impl<'a> AtomicWriteBuffer<'a> {
     }
 }
 
+/// Length which the pipe can be written atomically
+#[derive(Debug)]
+pub struct AtomicLen(usize);
+impl AtomicLen {
+    /// If len is more than PIPE_BUF, then return None.
+    pub fn new(len: usize) -> Option<Self> {
+        if len <= PIPE_BUF {
+            Some(Self(len))
+        } else {
+            None
+        }
+    }
+}
+
+async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::Result<usize> {
+    let fd_in = pipe_in.0.as_raw_fd();
+    let fd_out = pipe_out.0.as_raw_fd();
+
+    loop {
+        let mut ready = pipe_in.0.readable().await?;
+
+        let ret = unsafe { libc::tee(fd_in, fd_out, len, libc::SPLICE_F_NONBLOCK) };
+        match cvt!(ret) {
+            Err(e) if is_wouldblock(&e) => {
+                ready.retain_ready();
+            }
+            Err(e) => break Err(e),
+            Ok(ret) => break Ok(ret as usize),
+        }
+    }
+}
+
+/// Duplicates up to len bytes of data from pipe_in to pipe_out.
+///
+/// It does not consume the data that is duplicated from pipe_in; therefore, that data
+/// can be copied by a subsequent splice.
+pub async fn tee_atomic(
+    pipe_in: &mut PipeRead,
+    pipe_out: &PipeWrite,
+    len: AtomicLen,
+) -> io::Result<usize> {
+    tee_impl(pipe_in, pipe_out, len.0).await
+}
+
+/// Duplicates up to len bytes of data from pipe_in to pipe_out.
+///
+/// It does not consume the data that is duplicated from pipe_in; therefore, that data
+/// can be copied by a subsequent splice.
+pub async fn tee(
+    pipe_in: &mut PipeRead,
+    pipe_out: &mut PipeWrite,
+    len: AtomicLen,
+) -> io::Result<usize> {
+    tee_impl(pipe_in, pipe_out, len.0).await
+}
+
 /// Pipe read
 pub struct PipeRead(AsyncFd<PipeFd>);
 
