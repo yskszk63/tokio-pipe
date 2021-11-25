@@ -385,6 +385,23 @@ impl PipeWrite {
     ) -> Poll<Result<usize, io::Error>> {
         self.poll_write_impl(cx, buf.0)
     }
+
+    /// Moves data between fd and pipe without copying between kernel address space and
+    /// user address space.
+    ///
+    /// It transfers up to len bytes of data from asyncfd_in to self.
+    ///
+    ///  * `asyncfd_in` - must be have O_NONBLOCK set,
+    ///    otherwise this function might block.
+    ///  * `off_in` - If it is not None, then it would be updated on success.
+    pub async fn splice_from(
+        &mut self,
+        asyncfd_in: &AsyncFd<impl AsRawFd>,
+        off_in: Option<&mut off64_t>,
+        len: usize,
+    ) -> io::Result<usize> {
+        splice_impl(asyncfd_in, off_in, &self.0, None, len, false).await
+    }
 }
 
 impl AsyncWrite for PipeWrite {
