@@ -189,36 +189,18 @@ async fn splice_impl(
             0
         };
 
-    // There is only one reader, so it only needs to polled once.
-    let mut _read_ready = asyncfd_in.readable().await?;
+    // There is only one reader and one writer, so it only needs to polled once.
+    let _read_ready = asyncfd_in.readable().await?;
+    let _write_ready = asyncfd_out.writable().await?;
 
     loop {
-        // There could be multiple writers if splice_atomic or splice_from_atomic
-        // is used.
-        let mut write_ready = asyncfd_out.writable().await?;
-
         let ret = unsafe { libc::splice(fd_in, off_in, fd_out, off_out, len, flags) };
         match cvt!(ret) {
-            Err(e) if is_wouldblock(&e) => {
-                write_ready.clear_ready();
-            }
+            Err(e) if is_wouldblock(&e) => (),
             Err(e) => break Err(e),
             Ok(ret) => break Ok(ret as usize),
         }
     }
-}
-
-/// Moves data between pipes without copying between kernel address space and
-/// user address space.
-///
-/// It transfers up to len bytes of data from pipe_in to pipe_out.
-#[cfg(target_os = "linux")]
-pub async fn splice_atomic(
-    pipe_in: &mut PipeRead,
-    pipe_out: &PipeWrite,
-    len: AtomicLen,
-) -> io::Result<usize> {
-    splice_impl(&mut pipe_in.0, None, &pipe_out.0, None, len.0, false).await
 }
 
 /// Moves data between pipes without copying between kernel address space and
@@ -386,35 +368,6 @@ impl PipeWrite {
         self.poll_write_impl(cx, buf.0)
     }
 
-    #[cfg(target_os = "linux")]
-    async fn splice_from_impl(
-        &self,
-        asyncfd_in: &mut AsyncFd<impl AsRawFd>,
-        off_in: Option<&mut off64_t>,
-        len: usize,
-    ) -> io::Result<usize> {
-        splice_impl(asyncfd_in, off_in, &self.0, None, len, false).await
-    }
-
-    /// Moves data between fd and pipe without copying between kernel address space and
-    /// user address space.
-    ///
-    /// It transfers up to len bytes of data from asyncfd_in to self.
-    ///
-    ///  * `asyncfd_in` - must be have O_NONBLOCK set,
-    ///    otherwise this function might block.
-    ///    There must not be other reader for that fd (or its duplicates).
-    ///  * `off_in` - If it is not None, then it would be updated on success.
-    #[cfg(target_os = "linux")]
-    pub async fn splice_from_atomic(
-        &self,
-        asyncfd_in: &mut AsyncFd<impl AsRawFd>,
-        off_in: Option<&mut off64_t>,
-        len: AtomicLen,
-    ) -> io::Result<usize> {
-        self.splice_from_impl(asyncfd_in, off_in, len.0).await
-    }
-
     /// Moves data between fd and pipe without copying between kernel address space and
     /// user address space.
     ///
@@ -431,7 +384,7 @@ impl PipeWrite {
         off_in: Option<&mut off64_t>,
         len: usize,
     ) -> io::Result<usize> {
-        self.splice_from_impl(asyncfd_in, off_in, len).await
+        splice_impl(asyncfd_in, off_in, &self.0, None, len, false).await
     }
 }
 
