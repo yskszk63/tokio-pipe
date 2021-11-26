@@ -114,7 +114,7 @@ impl<'a> AtomicWriteBuffer<'a> {
 pub struct AtomicLen(usize);
 impl AtomicLen {
     /// If len is more than PIPE_BUF, then return None.
-    pub fn new(len: usize) -> Option<Self> {
+    pub const fn new(len: usize) -> Option<Self> {
         if len <= PIPE_BUF {
             Some(Self(len))
         } else {
