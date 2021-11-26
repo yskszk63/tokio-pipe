@@ -32,7 +32,7 @@ use std::task::{Context, Poll};
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-pub use libc::{off_t, PIPE_BUF};
+pub use libc::{off64_t, PIPE_BUF};
 
 #[cfg(target_os = "macos")]
 const MAX_LEN: usize = <libc::c_int>::MAX as usize - 1;
@@ -178,9 +178,9 @@ fn as_ptr<T>(option: Option<&mut T>) -> *mut T {
 
 async fn splice_impl(
     asyncfd_in: &mut AsyncFd<impl AsRawFd>,
-    off_in: Option<&mut off_t>,
+    off_in: Option<&mut off64_t>,
     asyncfd_out: &AsyncFd<impl AsRawFd>,
-    off_out: Option<&mut off_t>,
+    off_out: Option<&mut off64_t>,
     len: usize,
     has_more_data: bool,
 ) -> io::Result<usize> {
@@ -257,7 +257,7 @@ impl PipeRead {
     pub async fn splice_to(
         &mut self,
         asyncfd_out: &AsyncFd<impl AsRawFd>,
-        off_out: Option<&mut off_t>,
+        off_out: Option<&mut off64_t>,
         len: usize,
         has_more_data: bool,
     ) -> io::Result<usize> {
@@ -394,7 +394,7 @@ impl PipeWrite {
     async fn splice_from_impl(
         &self,
         asyncfd_in: &mut AsyncFd<impl AsRawFd>,
-        off_in: Option<&mut off_t>,
+        off_in: Option<&mut off64_t>,
         len: usize,
     ) -> io::Result<usize> {
         splice_impl(asyncfd_in, off_in, &self.0, None, len, false).await
@@ -412,7 +412,7 @@ impl PipeWrite {
     pub async fn splice_from_atomic(
         &self,
         asyncfd_in: &mut AsyncFd<impl AsRawFd>,
-        off_in: Option<&mut off_t>,
+        off_in: Option<&mut off64_t>,
         len: AtomicLen,
     ) -> io::Result<usize> {
         self.splice_from_impl(asyncfd_in, off_in, len.0).await
@@ -430,7 +430,7 @@ impl PipeWrite {
     pub async fn splice_from(
         &mut self,
         asyncfd_in: &mut AsyncFd<impl AsRawFd>,
-        off_in: Option<&mut off_t>,
+        off_in: Option<&mut off64_t>,
         len: usize,
     ) -> io::Result<usize> {
         self.splice_from_impl(asyncfd_in, off_in, len).await
