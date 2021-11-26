@@ -32,7 +32,10 @@ use std::task::{Context, Poll};
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-pub use libc::{off64_t, PIPE_BUF};
+#[cfg(target_os = "linux")]
+pub use libc::off64_t;
+
+pub use libc::PIPE_BUF;
 
 #[cfg(target_os = "macos")]
 const MAX_LEN: usize = <libc::c_int>::MAX as usize - 1;
