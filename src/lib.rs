@@ -106,6 +106,10 @@ impl<'a> AtomicWriteBuffer<'a> {
             None
         }
     }
+
+    pub fn get_buffer(&self) -> &'a [u8] {
+        self.0
+    }
 }
 
 /// Pipe read
