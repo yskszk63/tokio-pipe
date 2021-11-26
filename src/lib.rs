@@ -644,6 +644,7 @@ with os.fdopen(3, 'wb') as w:
         Ok(())
     }
 
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_tee() {
         let (mut r1, mut w1) = pipe().unwrap();
@@ -682,6 +683,7 @@ with os.fdopen(3, 'wb') as w:
         tokio::try_join!(r1_task, r2_task).unwrap();
     }
 
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_tee_no_inf_loop() {
         let (mut r1, mut w1) = pipe().unwrap();
@@ -718,6 +720,7 @@ with os.fdopen(3, 'wb') as w:
         tokio::try_join!(w1_task, r2_task).unwrap();
     }
 
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_splice() {
         let (mut r1, mut w1) = pipe().unwrap();
@@ -740,6 +743,7 @@ with os.fdopen(3, 'wb') as w:
         }
     }
 
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_splice_no_inf_loop() {
         let (mut r1, mut w1) = pipe().unwrap();
