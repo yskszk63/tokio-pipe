@@ -720,6 +720,35 @@ with os.fdopen(3, 'wb') as w:
         }
     }
 
-    // TODO: Test splice, make sure they doesn't loop forever if
-    // the write end is full.
+    #[tokio::test]
+    async fn test_splice_no_inf_loop() {
+        let (mut r1, mut w1) = pipe().unwrap();
+        let (mut r2, mut w2) = pipe().unwrap();
+
+        let w1_task = tokio::spawn(async move {
+            for n in 0..1024 {
+                w1.write_u32(n).await.unwrap();
+            }
+        });
+
+        for n in 0..1024 {
+            w2.write_u32(n).await.unwrap();
+        }
+
+        let r2_task = tokio::spawn(async move {
+            let mut n = 0u32;
+            let mut buf = [0; 4 * 128];
+            while n < 1024 {
+                r2.read_exact(&mut buf).await.unwrap();
+                for x in buf.chunks(4) {
+                    assert_eq!(x, n.to_be_bytes());
+                    n += 1;
+                }
+            }
+        });
+
+        splice(&mut r1, &mut w2, 4096).await.unwrap();
+
+        tokio::try_join!(w1_task, r2_task).unwrap();
+    }
 }
