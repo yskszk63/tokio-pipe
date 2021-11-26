@@ -512,6 +512,8 @@ pub fn pipe() -> io::Result<(PipeRead, PipeWrite)> {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[cfg(target_os = "linux")]
     use tokio::time::{sleep, Duration};
 
     #[tokio::test]
