@@ -685,7 +685,7 @@ with os.fdopen(3, 'wb') as w:
         }
 
         let r2_task = tokio::spawn(async move {
-            sleep(Duration::from_millis(100)).await;
+            sleep(Duration::from_millis(200)).await;
 
             let mut n = 0u32;
             let mut buf = [0; 4 * 128];
@@ -743,7 +743,7 @@ with os.fdopen(3, 'wb') as w:
         }
 
         let r2_task = tokio::spawn(async move {
-            sleep(Duration::from_millis(100)).await;
+            sleep(Duration::from_millis(200)).await;
 
             let mut n = 0u32;
             let mut buf = [0; 4 * 128];
