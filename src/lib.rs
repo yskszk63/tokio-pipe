@@ -100,7 +100,7 @@ impl Drop for PipeFd {
 pub struct AtomicWriteBuffer<'a>(&'a [u8]);
 impl<'a> AtomicWriteBuffer<'a> {
     /// If buffer is more than PIPE_BUF, then return None.
-    pub const fn new(buffer: &'a [u8]) -> Option<Self> {
+    pub fn new(buffer: &'a [u8]) -> Option<Self> {
         if buffer.len() <= PIPE_BUF {
             Some(Self(buffer))
         } else {
@@ -114,7 +114,7 @@ impl<'a> AtomicWriteBuffer<'a> {
 pub struct AtomicLen(usize);
 impl AtomicLen {
     /// If len is more than PIPE_BUF, then return None.
-    pub const fn new(len: usize) -> Option<Self> {
+    pub fn new(len: usize) -> Option<Self> {
         if len <= PIPE_BUF {
             Some(Self(len))
         } else {
