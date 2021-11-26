@@ -497,6 +497,7 @@ pub fn pipe() -> io::Result<(PipeRead, PipeWrite)> {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::time::{sleep, Duration};
 
     #[tokio::test]
     async fn test() {
@@ -672,6 +673,8 @@ with os.fdopen(3, 'wb') as w:
         let (mut r2, mut w2) = pipe().unwrap();
 
         let w1_task = tokio::spawn(async move {
+            sleep(Duration::from_millis(100)).await;
+
             for n in 0..1024 {
                 w1.write_u32(n).await.unwrap();
             }
@@ -682,6 +685,8 @@ with os.fdopen(3, 'wb') as w:
         }
 
         let r2_task = tokio::spawn(async move {
+            sleep(Duration::from_millis(100)).await;
+
             let mut n = 0u32;
             let mut buf = [0; 4 * 128];
             while n < 1024 {
@@ -726,6 +731,8 @@ with os.fdopen(3, 'wb') as w:
         let (mut r2, mut w2) = pipe().unwrap();
 
         let w1_task = tokio::spawn(async move {
+            sleep(Duration::from_millis(100)).await;
+
             for n in 0..1024 {
                 w1.write_u32(n).await.unwrap();
             }
@@ -736,6 +743,8 @@ with os.fdopen(3, 'wb') as w:
         }
 
         let r2_task = tokio::spawn(async move {
+            sleep(Duration::from_millis(100)).await;
+
             let mut n = 0u32;
             let mut buf = [0; 4 * 128];
             while n < 1024 {
