@@ -112,21 +112,6 @@ impl<'a> AtomicWriteBuffer<'a> {
     }
 }
 
-/// Length which the pipe can be written atomically
-#[cfg_attr(target_os = "linux", allow(dead_code))]
-#[derive(Debug)]
-pub struct AtomicLen(usize);
-impl AtomicLen {
-    /// If len is more than PIPE_BUF, then return None.
-    pub fn new(len: usize) -> Option<Self> {
-        if len <= PIPE_BUF {
-            Some(Self(len))
-        } else {
-            None
-        }
-    }
-}
-
 #[cfg(target_os = "linux")]
 async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::Result<usize> {
     let fd_in = pipe_in.0.as_raw_fd();
