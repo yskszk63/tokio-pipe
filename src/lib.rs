@@ -132,35 +132,18 @@ async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::R
     let fd_in = pipe_in.0.as_raw_fd();
     let fd_out = pipe_out.0.as_raw_fd();
 
-    // There is only one reader, so it only needs to polled once.
+    // There is only one reader and one writer, so it only needs to polled once.
     let mut _read_ready = pipe_in.0.readable().await?;
+    let mut _write_ready = pipe_out.0.writable().await?;
 
     loop {
-        // There could be multiple writers if tee_atomic is used.
-        let mut write_ready = pipe_out.0.writable().await?;
-
         let ret = unsafe { libc::tee(fd_in, fd_out, len, libc::SPLICE_F_NONBLOCK) };
         match cvt!(ret) {
-            Err(e) if is_wouldblock(&e) => {
-                write_ready.clear_ready();
-            }
+            Err(e) if is_wouldblock(&e) => (),
             Err(e) => break Err(e),
             Ok(ret) => break Ok(ret as usize),
         }
     }
-}
-
-/// Duplicates up to len bytes of data from pipe_in to pipe_out.
-///
-/// It does not consume the data that is duplicated from pipe_in; therefore, that data
-/// can be copied by a subsequent splice.
-#[cfg(target_os = "linux")]
-pub async fn tee_atomic(
-    pipe_in: &mut PipeRead,
-    pipe_out: &PipeWrite,
-    len: AtomicLen,
-) -> io::Result<usize> {
-    tee_impl(pipe_in, pipe_out, len.0).await
 }
 
 /// Duplicates up to len bytes of data from pipe_in to pipe_out.
