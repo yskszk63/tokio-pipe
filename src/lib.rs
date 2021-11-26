@@ -627,4 +627,45 @@ with os.fdopen(3, 'wb') as w:
         child.wait().await?;
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_tee() {
+        let (mut r1, mut w1) = pipe().unwrap();
+        let (mut r2, mut w2) = pipe().unwrap();
+
+        for n in 0..1024 {
+            w1.write_u32(n).await.unwrap();
+        }
+
+        tee(&mut r1, &mut w2, 4096).await.unwrap();
+
+        let r2_task = tokio::spawn(async move {
+            let mut n = 0u32;
+            let mut buf = [0; 4 * 128];
+            while n < 1024 {
+                r2.read_exact(&mut buf).await.unwrap();
+                for x in buf.chunks(4) {
+                    assert_eq!(x, n.to_be_bytes());
+                    n += 1;
+                }
+            }
+        });
+
+        let r1_task = tokio::spawn(async move {
+            let mut n = 0u32;
+            let mut buf = [0; 4 * 128];
+            while n < 1024 {
+                r1.read_exact(&mut buf).await.unwrap();
+                for x in buf.chunks(4) {
+                    assert_eq!(x, n.to_be_bytes());
+                    n += 1;
+                }
+            }
+        });
+
+        tokio::try_join!(r1_task, r2_task).unwrap();
+    }
+
+    // TODO: Test tee, splice, make sure they doesn't loop forever if
+    // the write end is full.
 }
