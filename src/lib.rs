@@ -113,7 +113,7 @@ impl<'a> AtomicWriteBuffer<'a> {
 }
 
 /// Length which the pipe can be written atomically
-#[cfg(target_os = "linux")]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 #[derive(Debug)]
 pub struct AtomicLen(usize);
 impl AtomicLen {
