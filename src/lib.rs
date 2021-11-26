@@ -110,6 +110,7 @@ impl<'a> AtomicWriteBuffer<'a> {
 }
 
 /// Length which the pipe can be written atomically
+#[cfg(target_os = "linux")]
 #[derive(Debug)]
 pub struct AtomicLen(usize);
 impl AtomicLen {
@@ -123,6 +124,7 @@ impl AtomicLen {
     }
 }
 
+#[cfg(target_os = "linux")]
 async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::Result<usize> {
     let fd_in = pipe_in.0.as_raw_fd();
     let fd_out = pipe_out.0.as_raw_fd();
@@ -149,6 +151,7 @@ async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::R
 ///
 /// It does not consume the data that is duplicated from pipe_in; therefore, that data
 /// can be copied by a subsequent splice.
+#[cfg(target_os = "linux")]
 pub async fn tee_atomic(
     pipe_in: &mut PipeRead,
     pipe_out: &PipeWrite,
@@ -161,6 +164,7 @@ pub async fn tee_atomic(
 ///
 /// It does not consume the data that is duplicated from pipe_in; therefore, that data
 /// can be copied by a subsequent splice.
+#[cfg(target_os = "linux")]
 pub async fn tee(
     pipe_in: &mut PipeRead,
     pipe_out: &mut PipeWrite,
@@ -169,6 +173,7 @@ pub async fn tee(
     tee_impl(pipe_in, pipe_out, len).await
 }
 
+#[cfg(target_os = "linux")]
 fn as_ptr<T>(option: Option<&mut T>) -> *mut T {
     match option {
         Some(some) => some,
@@ -176,6 +181,7 @@ fn as_ptr<T>(option: Option<&mut T>) -> *mut T {
     }
 }
 
+#[cfg(target_os = "linux")]
 async fn splice_impl(
     asyncfd_in: &mut AsyncFd<impl AsRawFd>,
     off_in: Option<&mut off64_t>,
@@ -220,6 +226,7 @@ async fn splice_impl(
 /// user address space.
 ///
 /// It transfers up to len bytes of data from pipe_in to pipe_out.
+#[cfg(target_os = "linux")]
 pub async fn splice_atomic(
     pipe_in: &mut PipeRead,
     pipe_out: &PipeWrite,
@@ -232,6 +239,7 @@ pub async fn splice_atomic(
 /// user address space.
 ///
 /// It transfers up to len bytes of data from pipe_in to pipe_out.
+#[cfg(target_os = "linux")]
 pub async fn splice(
     pipe_in: &mut PipeRead,
     pipe_out: &mut PipeWrite,
@@ -254,6 +262,7 @@ impl PipeRead {
     ///  * `has_more_data` - If there is more data to be sent to off_out.
     ///    This is a helpful hint for socket (see also the description of MSG_MORE
     ///    in send(2), and the description of TCP_CORK in tcp(7)).
+    #[cfg(target_os = "linux")]
     pub async fn splice_to(
         &mut self,
         asyncfd_out: &AsyncFd<impl AsRawFd>,
@@ -391,6 +400,7 @@ impl PipeWrite {
         self.poll_write_impl(cx, buf.0)
     }
 
+    #[cfg(target_os = "linux")]
     async fn splice_from_impl(
         &self,
         asyncfd_in: &mut AsyncFd<impl AsRawFd>,
@@ -409,6 +419,7 @@ impl PipeWrite {
     ///    otherwise this function might block.
     ///    There must not be other reader for that fd (or its duplicates).
     ///  * `off_in` - If it is not None, then it would be updated on success.
+    #[cfg(target_os = "linux")]
     pub async fn splice_from_atomic(
         &self,
         asyncfd_in: &mut AsyncFd<impl AsRawFd>,
@@ -427,6 +438,7 @@ impl PipeWrite {
     ///    otherwise this function might block.
     ///    There must not be other reader for that fd (or its duplicates).
     ///  * `off_in` - If it is not None, then it would be updated on success.
+    #[cfg(target_os = "linux")]
     pub async fn splice_from(
         &mut self,
         asyncfd_in: &mut AsyncFd<impl AsRawFd>,
