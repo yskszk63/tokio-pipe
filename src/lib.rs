@@ -117,6 +117,25 @@ impl<'a> AtomicWriteBuffer<'a> {
     }
 }
 
+/// `IoSlice`s that can be written atomically
+#[derive(Copy, Clone, Debug)]
+pub struct AtomicWriteIoSlices<'a, 'b>(&'a [io::IoSlice<'b>]);
+impl<'a, 'b> AtomicWriteIoSlices<'a, 'b> {
+    /// If total length is more than PIPE_BUF, then return None.
+    pub fn new(buffers: &'a [io::IoSlice<'b>]) -> Option<Self> {
+        let len: usize = buffers.iter().map(|slice| slice.len()).sum();
+        if len <= PIPE_BUF {
+            Some(Self(buffers))
+        } else {
+            None
+        }
+    }
+
+    pub fn into_inner(self) -> &'a [io::IoSlice<'b>] {
+        self.0
+    }
+}
+
 #[cfg(target_os = "linux")]
 async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::Result<usize> {
     let fd_in = pipe_in.0.as_raw_fd();
@@ -358,6 +377,36 @@ impl PipeWrite {
         self.poll_write_impl(cx, buf.0)
     }
 
+    fn poll_write_vectored_impl(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<Result<usize, io::Error>> {
+        let fd = self.0.as_raw_fd();
+
+        loop {
+            let pinned = Pin::new(&self.0);
+            let mut ready = ready!(pinned.poll_write_ready(cx))?;
+            let ret =
+                unsafe { libc::writev(fd, bufs.as_ptr() as *const libc::iovec, bufs.len() as i32) };
+            match cvt!(ret) {
+                Err(e) if is_wouldblock(&e) => {
+                    ready.clear_ready();
+                }
+                Err(e) => return Poll::Ready(Err(e)),
+                Ok(ret) => return Poll::Ready(Ok(ret as usize)),
+            }
+        }
+    }
+
+    pub fn poll_write_vectored_atomic(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: AtomicWriteIoSlices<'_, '_>,
+    ) -> Poll<Result<usize, io::Error>> {
+        self.poll_write_vectored_impl(cx, bufs.0)
+    }
+
     /// Moves data between fd and pipe without copying between kernel address space and
     /// user address space.
     ///
@@ -393,6 +442,14 @@ impl AsyncWrite for PipeWrite {
 
     fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         Poll::Ready(Ok(()))
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<Result<usize, io::Error>> {
+        self.poll_write_vectored_impl(cx, bufs)
     }
 }
 
@@ -706,5 +763,38 @@ with os.fdopen(3, 'wb') as w:
         splice(&mut r1, &mut w2, 4096).await.unwrap();
 
         tokio::try_join!(w1_task, r2_task).unwrap();
+    }
+
+    fn as_ioslice<T>(v: &[T]) -> io::IoSlice<'_> {
+        io::IoSlice::new(unsafe {
+            std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * std::mem::size_of::<T>())
+        })
+    }
+
+    #[tokio::test]
+    async fn test_writev() {
+        let (mut r, mut w) = pipe().unwrap();
+
+        let w_task = tokio::spawn(async move {
+            let buffer1: Vec<u32> = (0..512).collect();
+            let buffer2: Vec<u32> = (512..1024).collect();
+
+            w.write_vectored(&[as_ioslice(&buffer1), as_ioslice(&buffer2)])
+                .await
+                .unwrap();
+        });
+
+        let r_task = tokio::spawn(async move {
+            let mut n = 0u32;
+            let mut buf = [0; 4 * 128];
+            while n < 1024 {
+                r.read_exact(&mut buf).await.unwrap();
+                for x in buf.chunks(4) {
+                    assert_eq!(x, n.to_ne_bytes());
+                    n += 1;
+                }
+            }
+        });
+        tokio::try_join!(w_task, r_task).unwrap();
     }
 }
