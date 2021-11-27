@@ -26,10 +26,15 @@ use std::io;
 use std::mem;
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::pin::Pin;
+#[cfg(target_os = "linux")]
+use std::ptr;
 use std::task::{Context, Poll};
 
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+#[cfg(target_os = "linux")]
+pub use libc::off64_t;
 
 pub use libc::PIPE_BUF;
 
@@ -112,8 +117,120 @@ impl<'a> AtomicWriteBuffer<'a> {
     }
 }
 
+#[cfg(target_os = "linux")]
+async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::Result<usize> {
+    let fd_in = pipe_in.0.as_raw_fd();
+    let fd_out = pipe_out.0.as_raw_fd();
+
+    // There is only one reader and one writer, so it only needs to polled once.
+    let _read_ready = pipe_in.0.readable().await?;
+    let _write_ready = pipe_out.0.writable().await?;
+
+    loop {
+        let ret = unsafe { libc::tee(fd_in, fd_out, len, libc::SPLICE_F_NONBLOCK) };
+        match cvt!(ret) {
+            Err(e) if is_wouldblock(&e) => (),
+            Err(e) => break Err(e),
+            Ok(ret) => break Ok(ret as usize),
+        }
+    }
+}
+
+/// Duplicates up to len bytes of data from pipe_in to pipe_out.
+///
+/// It does not consume the data that is duplicated from pipe_in; therefore, that data
+/// can be copied by a subsequent splice.
+#[cfg(target_os = "linux")]
+pub async fn tee(
+    pipe_in: &mut PipeRead,
+    pipe_out: &mut PipeWrite,
+    len: usize,
+) -> io::Result<usize> {
+    tee_impl(pipe_in, pipe_out, len).await
+}
+
+#[cfg(target_os = "linux")]
+fn as_ptr<T>(option: Option<&mut T>) -> *mut T {
+    match option {
+        Some(some) => some,
+        None => ptr::null_mut(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+async fn splice_impl(
+    asyncfd_in: &mut AsyncFd<impl AsRawFd>,
+    off_in: Option<&mut off64_t>,
+    asyncfd_out: &AsyncFd<impl AsRawFd>,
+    off_out: Option<&mut off64_t>,
+    len: usize,
+    has_more_data: bool,
+) -> io::Result<usize> {
+    let fd_in = asyncfd_in.as_raw_fd();
+    let fd_out = asyncfd_out.as_raw_fd();
+
+    let off_in = as_ptr(off_in);
+    let off_out = as_ptr(off_out);
+
+    let flags = libc::SPLICE_F_NONBLOCK
+        | if has_more_data {
+            libc::SPLICE_F_MORE
+        } else {
+            0
+        };
+
+    // There is only one reader and one writer, so it only needs to polled once.
+    let _read_ready = asyncfd_in.readable().await?;
+    let _write_ready = asyncfd_out.writable().await?;
+
+    loop {
+        let ret = unsafe { libc::splice(fd_in, off_in, fd_out, off_out, len, flags) };
+        match cvt!(ret) {
+            Err(e) if is_wouldblock(&e) => (),
+            Err(e) => break Err(e),
+            Ok(ret) => break Ok(ret as usize),
+        }
+    }
+}
+
+/// Moves data between pipes without copying between kernel address space and
+/// user address space.
+///
+/// It transfers up to len bytes of data from pipe_in to pipe_out.
+#[cfg(target_os = "linux")]
+pub async fn splice(
+    pipe_in: &mut PipeRead,
+    pipe_out: &mut PipeWrite,
+    len: usize,
+) -> io::Result<usize> {
+    splice_impl(&mut pipe_in.0, None, &pipe_out.0, None, len, false).await
+}
+
 /// Pipe read
 pub struct PipeRead(AsyncFd<PipeFd>);
+impl PipeRead {
+    /// Moves data between pipe and fd without copying between kernel address space and
+    /// user address space.
+    ///
+    /// It transfers up to len bytes of data from self to asyncfd_out.
+    ///
+    ///  * `asyncfd_out` - must be have O_NONBLOCK set,
+    ///    otherwise this function might block.
+    ///  * `off_out` - If it is not None, then it would be updated on success.
+    ///  * `has_more_data` - If there is more data to be sent to off_out.
+    ///    This is a helpful hint for socket (see also the description of MSG_MORE
+    ///    in send(2), and the description of TCP_CORK in tcp(7)).
+    #[cfg(target_os = "linux")]
+    pub async fn splice_to(
+        &mut self,
+        asyncfd_out: &AsyncFd<impl AsRawFd>,
+        off_out: Option<&mut off64_t>,
+        len: usize,
+        has_more_data: bool,
+    ) -> io::Result<usize> {
+        splice_impl(&mut self.0, None, asyncfd_out, off_out, len, has_more_data).await
+    }
+}
 
 impl AsyncRead for PipeRead {
     fn poll_read(
@@ -240,6 +357,25 @@ impl PipeWrite {
     ) -> Poll<Result<usize, io::Error>> {
         self.poll_write_impl(cx, buf.0)
     }
+
+    /// Moves data between fd and pipe without copying between kernel address space and
+    /// user address space.
+    ///
+    /// It transfers up to len bytes of data from asyncfd_in to self.
+    ///
+    ///  * `asyncfd_in` - must be have O_NONBLOCK set,
+    ///    otherwise this function might block.
+    ///    There must not be other reader for that fd (or its duplicates).
+    ///  * `off_in` - If it is not None, then it would be updated on success.
+    #[cfg(target_os = "linux")]
+    pub async fn splice_from(
+        &mut self,
+        asyncfd_in: &mut AsyncFd<impl AsRawFd>,
+        off_in: Option<&mut off64_t>,
+        len: usize,
+    ) -> io::Result<usize> {
+        splice_impl(asyncfd_in, off_in, &self.0, None, len, false).await
+    }
 }
 
 impl AsyncWrite for PipeWrite {
@@ -302,6 +438,9 @@ pub fn pipe() -> io::Result<(PipeRead, PipeWrite)> {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[cfg(target_os = "linux")]
+    use tokio::time::{sleep, Duration};
 
     #[tokio::test]
     async fn test() {
@@ -431,5 +570,141 @@ with os.fdopen(3, 'wb') as w:
 
         child.wait().await?;
         Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_tee() {
+        let (mut r1, mut w1) = pipe().unwrap();
+        let (mut r2, mut w2) = pipe().unwrap();
+
+        for n in 0..1024 {
+            w1.write_u32(n).await.unwrap();
+        }
+
+        tee(&mut r1, &mut w2, 4096).await.unwrap();
+
+        let r2_task = tokio::spawn(async move {
+            let mut n = 0u32;
+            let mut buf = [0; 4 * 128];
+            while n < 1024 {
+                r2.read_exact(&mut buf).await.unwrap();
+                for x in buf.chunks(4) {
+                    assert_eq!(x, n.to_be_bytes());
+                    n += 1;
+                }
+            }
+        });
+
+        let r1_task = tokio::spawn(async move {
+            let mut n = 0u32;
+            let mut buf = [0; 4 * 128];
+            while n < 1024 {
+                r1.read_exact(&mut buf).await.unwrap();
+                for x in buf.chunks(4) {
+                    assert_eq!(x, n.to_be_bytes());
+                    n += 1;
+                }
+            }
+        });
+
+        tokio::try_join!(r1_task, r2_task).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_tee_no_inf_loop() {
+        let (mut r1, mut w1) = pipe().unwrap();
+        let (mut r2, mut w2) = pipe().unwrap();
+
+        let w1_task = tokio::spawn(async move {
+            sleep(Duration::from_millis(100)).await;
+
+            for n in 0..1024 {
+                w1.write_u32(n).await.unwrap();
+            }
+        });
+
+        for n in 0..1024 {
+            w2.write_u32(n).await.unwrap();
+        }
+
+        let r2_task = tokio::spawn(async move {
+            sleep(Duration::from_millis(200)).await;
+
+            let mut n = 0u32;
+            let mut buf = [0; 4 * 128];
+            while n < 1024 {
+                r2.read_exact(&mut buf).await.unwrap();
+                for x in buf.chunks(4) {
+                    assert_eq!(x, n.to_be_bytes());
+                    n += 1;
+                }
+            }
+        });
+
+        tee(&mut r1, &mut w2, 4096).await.unwrap();
+
+        tokio::try_join!(w1_task, r2_task).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_splice() {
+        let (mut r1, mut w1) = pipe().unwrap();
+        let (mut r2, mut w2) = pipe().unwrap();
+
+        for n in 0..1024 {
+            w1.write_u32(n).await.unwrap();
+        }
+
+        splice(&mut r1, &mut w2, 4096).await.unwrap();
+
+        let mut n = 0u32;
+        let mut buf = [0; 4 * 128];
+        while n < 1024 {
+            r2.read_exact(&mut buf).await.unwrap();
+            for x in buf.chunks(4) {
+                assert_eq!(x, n.to_be_bytes());
+                n += 1;
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_splice_no_inf_loop() {
+        let (mut r1, mut w1) = pipe().unwrap();
+        let (mut r2, mut w2) = pipe().unwrap();
+
+        let w1_task = tokio::spawn(async move {
+            sleep(Duration::from_millis(100)).await;
+
+            for n in 0..1024 {
+                w1.write_u32(n).await.unwrap();
+            }
+        });
+
+        for n in 0..1024 {
+            w2.write_u32(n).await.unwrap();
+        }
+
+        let r2_task = tokio::spawn(async move {
+            sleep(Duration::from_millis(200)).await;
+
+            let mut n = 0u32;
+            let mut buf = [0; 4 * 128];
+            while n < 1024 {
+                r2.read_exact(&mut buf).await.unwrap();
+                for x in buf.chunks(4) {
+                    assert_eq!(x, n.to_be_bytes());
+                    n += 1;
+                }
+            }
+        });
+
+        splice(&mut r1, &mut w2, 4096).await.unwrap();
+
+        tokio::try_join!(w1_task, r2_task).unwrap();
     }
 }

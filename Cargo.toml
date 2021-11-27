@@ -16,5 +16,5 @@ tokio = { version="1.12", features=["net"] }
 libc = "0.2"
 
 [dev-dependencies]
-tokio = { version="1.12", features=["macros", "rt-multi-thread", "io-util", "process"] }
+tokio = { version="1.12", features=["macros", "rt-multi-thread", "io-util", "process", "time"] }
 anyhow = "1.0"
