@@ -107,7 +107,7 @@ impl<'a> AtomicWriteBuffer<'a> {
         }
     }
 
-    pub fn get_buffer(&self) -> &'a [u8] {
+    pub fn into_inner(self) -> &'a [u8] {
         self.0
     }
 }
