@@ -419,7 +419,13 @@ impl AsyncWrite for PipeWrite {
         Poll::Ready(Ok(()))
     }
 
-    // TODO: Impl poll_write_vectored
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<Result<usize, io::Error>> {
+        self.poll_write_vectored_impl(cx, bufs)
+    }
 }
 
 impl fmt::Debug for PipeWrite {
