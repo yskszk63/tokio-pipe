@@ -100,7 +100,7 @@ impl Drop for PipeFd {
 }
 
 /// A buffer that can be written atomically
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct AtomicWriteBuffer<'a>(&'a [u8]);
 impl<'a> AtomicWriteBuffer<'a> {
     /// If buffer is more than PIPE_BUF, then return None.
@@ -110,6 +110,10 @@ impl<'a> AtomicWriteBuffer<'a> {
         } else {
             None
         }
+    }
+
+    pub fn into_inner(self) -> &'a [u8] {
+        self.0
     }
 }
 
