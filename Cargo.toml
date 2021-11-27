@@ -12,9 +12,9 @@ categories = ["asynchronous"]
 rust-version = "1.45"
 
 [dependencies]
-tokio = { version="1.12", features=["net"] }
+tokio = { version="1.14", features=["net"] }
 libc = "0.2"
 
 [dev-dependencies]
-tokio = { version="1.12", features=["macros", "rt-multi-thread", "io-util", "process", "time"] }
+tokio = { version="1.14", features=["macros", "rt-multi-thread", "io-util", "process", "time"] }
 anyhow = "1.0"
