@@ -739,4 +739,37 @@ with os.fdopen(3, 'wb') as w:
 
         tokio::try_join!(w1_task, r2_task).unwrap();
     }
+
+    fn as_ioslice<T>(v: &[T]) -> io::IoSlice<'_> {
+        io::IoSlice::new(unsafe {
+            std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * std::mem::size_of::<T>())
+        })
+    }
+
+    #[tokio::test]
+    async fn test_writev() {
+        let (mut r, mut w) = pipe().unwrap();
+
+        let w_task = tokio::spawn(async move {
+            let buffer1: Vec<u32> = (0..512).collect();
+            let buffer2: Vec<u32> = (512..1024).collect();
+
+            w.write_vectored(&[as_ioslice(&buffer1), as_ioslice(&buffer2)])
+                .await
+                .unwrap();
+        });
+
+        let r_task = tokio::spawn(async move {
+            let mut n = 0u32;
+            let mut buf = [0; 4 * 128];
+            while n < 1024 {
+                r.read_exact(&mut buf).await.unwrap();
+                for x in buf.chunks(4) {
+                    assert_eq!(x, n.to_ne_bytes());
+                    n += 1;
+                }
+            }
+        });
+        tokio::try_join!(w_task, r_task).unwrap();
+    }
 }
