@@ -358,6 +358,30 @@ impl PipeWrite {
         self.poll_write_impl(cx, buf.0)
     }
 
+    fn poll_write_vectored_impl(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<Result<usize, io::Error>> {
+        let fd = self.0.as_raw_fd();
+
+        loop {
+            let pinned = Pin::new(&self.0);
+            let mut ready = ready!(pinned.poll_write_ready(cx))?;
+            let ret =
+                unsafe { libc::writev(fd, bufs.as_ptr() as *const libc::iovec, bufs.len() as i32) };
+            match cvt!(ret) {
+                Err(e) if is_wouldblock(&e) => {
+                    ready.clear_ready();
+                }
+                Err(e) => return Poll::Ready(Err(e)),
+                Ok(ret) => return Poll::Ready(Ok(ret as usize)),
+            }
+        }
+    }
+
+    // TODO: Impl poll_write_vectored_atomic
+
     /// Moves data between fd and pipe without copying between kernel address space and
     /// user address space.
     ///
@@ -394,6 +418,8 @@ impl AsyncWrite for PipeWrite {
     fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         Poll::Ready(Ok(()))
     }
+
+    // TODO: Impl poll_write_vectored
 }
 
 impl fmt::Debug for PipeWrite {
