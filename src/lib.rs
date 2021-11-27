@@ -26,6 +26,7 @@ use std::io;
 use std::mem;
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::pin::Pin;
+#[cfg(target_os = "linux")]
 use std::ptr;
 use std::task::{Context, Poll};
 
