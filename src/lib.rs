@@ -117,6 +117,25 @@ impl<'a> AtomicWriteBuffer<'a> {
     }
 }
 
+/// `IoSlice`s that can be written atomically
+#[derive(Copy, Clone, Debug)]
+pub struct AtomicWriteIoSlices<'a, 'b>(&'a [io::IoSlice<'b>]);
+impl<'a, 'b> AtomicWriteIoSlices<'a, 'b> {
+    /// If total length is more than PIPE_BUF, then return None.
+    pub fn new(buffers: &'a [io::IoSlice<'b>]) -> Option<Self> {
+        let len: usize = buffers.iter().map(|slice| slice.len()).sum();
+        if len <= PIPE_BUF {
+            Some(Self(buffers))
+        } else {
+            None
+        }
+    }
+
+    pub fn into_inner(self) -> &'a [io::IoSlice<'b>] {
+        self.0
+    }
+}
+
 #[cfg(target_os = "linux")]
 async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::Result<usize> {
     let fd_in = pipe_in.0.as_raw_fd();
@@ -380,7 +399,13 @@ impl PipeWrite {
         }
     }
 
-    // TODO: Impl poll_write_vectored_atomic
+    pub fn poll_write_vectored_atomic(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: AtomicWriteIoSlices<'_, '_>,
+    ) -> Poll<Result<usize, io::Error>> {
+        self.poll_write_vectored_impl(cx, bufs.0)
+    }
 
     /// Moves data between fd and pipe without copying between kernel address space and
     /// user address space.
