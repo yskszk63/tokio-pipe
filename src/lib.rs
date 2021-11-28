@@ -378,7 +378,7 @@ impl PipeWrite {
     }
 
     fn poll_write_vectored_impl(
-        self: Pin<&mut Self>,
+        self: Pin<&Self>,
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
@@ -400,7 +400,7 @@ impl PipeWrite {
     }
 
     pub fn poll_write_vectored_atomic(
-        self: Pin<&mut Self>,
+        self: Pin<&Self>,
         cx: &mut Context<'_>,
         bufs: AtomicWriteIoSlices<'_, '_>,
     ) -> Poll<Result<usize, io::Error>> {
@@ -449,7 +449,7 @@ impl AsyncWrite for PipeWrite {
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
-        self.poll_write_vectored_impl(cx, bufs)
+        self.as_ref().poll_write_vectored_impl(cx, bufs)
     }
 }
 
