@@ -260,7 +260,7 @@ impl PipeRead {
     pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
         check_pipe(fd)?;
         let status_flags = get_status_flags(fd)?;
-        if status_flags == libc::O_RDONLY {
+        if (status_flags & libc::O_ACCMODE) == libc::O_RDONLY {
             set_nonblocking_checked(fd, status_flags)?;
             Self::new(fd)
         } else {
@@ -369,7 +369,7 @@ impl PipeWrite {
     pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
         check_pipe(fd)?;
         let status_flags = get_status_flags(fd)?;
-        if status_flags == libc::O_WRONLY {
+        if (status_flags & libc::O_ACCMODE) == libc::O_WRONLY {
             set_nonblocking_checked(fd, status_flags)?;
             Self::new(fd)
         } else {
