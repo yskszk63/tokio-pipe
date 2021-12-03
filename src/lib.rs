@@ -80,7 +80,9 @@ fn is_wouldblock(err: &io::Error) -> bool {
 
 unsafe fn set_nonblocking(fd: RawFd) {
     let status_flags = libc::fcntl(fd, libc::F_GETFL);
-    libc::fcntl(fd, libc::F_SETFL, status_flags | libc::O_NONBLOCK);
+    if (status_flags & libc::O_NONBLOCK) == 0 {
+        libc::fcntl(fd, libc::F_SETFL, status_flags | libc::O_NONBLOCK);
+    }
 }
 
 fn set_nonblocking_checked(fd: RawFd, status_flags: libc::c_int) -> Result<(), io::Error> {
