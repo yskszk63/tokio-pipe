@@ -586,6 +586,9 @@ pub fn pipe() -> io::Result<(PipeRead, PipeWrite)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::fs::File;
+
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[cfg(target_os = "linux")]
@@ -888,5 +891,33 @@ with os.fdopen(3, 'wb') as w:
             }
         });
         tokio::try_join!(w_task, r_task).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_piperead_from_raw_fd_checked_success() {
+        let (r, _w) = pipe().unwrap();
+        let _r = PipeRead::from_raw_fd_checked(r.into_raw_fd()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_piperead_from_raw_fd_checked_failure_not_read_end() {
+        let (_r, w) = pipe().unwrap();
+        let error = PipeRead::from_raw_fd_checked(w.into_raw_fd())
+            .unwrap_err()
+            .into_inner()
+            .unwrap();
+
+        assert_eq!(format!("{}", error), "Fd isn't the read end");
+    }
+
+    #[tokio::test]
+    async fn test_piperead_from_raw_fd_checked_failure_not_pipe() {
+        let fd = File::open("/dev/null").unwrap().into_raw_fd();
+        let error = PipeRead::from_raw_fd_checked(fd)
+            .unwrap_err()
+            .into_inner()
+            .unwrap();
+
+        assert_eq!(format!("{}", error), "Fd is not a pipe");
     }
 }
