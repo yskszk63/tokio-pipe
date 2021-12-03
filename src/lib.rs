@@ -281,9 +281,13 @@ impl PipeRead {
         Ok(Self(AsyncFd::new(PipeFd(fd))?))
     }
 
+    fn from_pipefd(pipe_fd: PipeFd) -> Result<Self, io::Error> {
+        Ok(Self(AsyncFd::new(pipe_fd)?))
+    }
+
     /// * `fd` - PipeRead would take the ownership of this fd.
     pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
-        Ok(Self(AsyncFd::new(PipeFd::from_raw_fd_checked(fd, true)?)?))
+        Self::from_pipefd(PipeFd::from_raw_fd_checked(fd, true)?)
     }
 
     /// Moves data between pipe and fd without copying between kernel address space and
