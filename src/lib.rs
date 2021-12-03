@@ -252,11 +252,15 @@ pub async fn splice(
 /// Pipe read
 pub struct PipeRead(AsyncFd<PipeFd>);
 impl PipeRead {
+    fn new(fd: RawFd) -> Result<Self, io::Error> {
+        Ok(PipeRead(AsyncFd::new(PipeFd(fd))?))
+    }
+
     /// * `fd` - PipeRead would take the ownership of this fd.
     pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
         check_pipe(fd)?;
         if get_status_flags(fd)? == libc::O_RDONLY {
-            Ok(PipeRead(AsyncFd::new(PipeFd(fd))?))
+            Self::new(fd)
         } else {
             Err(io::Error::new(
                 io::ErrorKind::Other,
@@ -522,10 +526,7 @@ fn sys_pipe() -> io::Result<(RawFd, RawFd)> {
 /// Open pipe
 pub fn pipe() -> io::Result<(PipeRead, PipeWrite)> {
     let (r, w) = sys_pipe()?;
-    Ok((
-        PipeRead(AsyncFd::new(PipeFd(r))?),
-        PipeWrite(AsyncFd::new(PipeFd(w))?),
-    ))
+    Ok((PipeRead::new(r)?, PipeWrite(AsyncFd::new(PipeFd(w))?)))
 }
 
 #[cfg(test)]
