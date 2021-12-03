@@ -48,7 +48,6 @@ unsafe fn set_nonblocking(fd: RawFd) {
     libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK);
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "solaris")))]
 macro_rules! try_libc {
     ($e: expr) => {{
         let ret = $e;
@@ -81,6 +80,13 @@ macro_rules! ready {
 
 fn is_wouldblock(err: &io::Error) -> bool {
     err.kind() == io::ErrorKind::WouldBlock
+}
+
+fn set_nonblocking_checked(fd: RawFd, status_flags: libc::c_int) -> Result<(), io::Error> {
+    let res = unsafe { libc::fcntl(fd, libc::F_SETFL, status_flags | libc::O_NONBLOCK) };
+    try_libc!(res);
+
+    Ok(())
 }
 
 fn check_pipe(fd: RawFd) -> Result<(), io::Error> {
