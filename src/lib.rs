@@ -121,9 +121,9 @@ impl PipeFd {
     /// * `readable` - true for the read end, false for the write end
     fn from_raw_fd_checked(fd: RawFd, readable: bool) -> Result<Self, io::Error> {
         let (access_mode, errmsg) = if readable {
-            (libc::O_RDONLY, "Fd isn't the read end")
+            (libc::O_RDONLY, "Fd is not the read end")
         } else {
-            (libc::O_WRONLY, "Fd isn't the write end")
+            (libc::O_WRONLY, "Fd is not the write end")
         };
 
         check_pipe(fd)?;
@@ -907,7 +907,7 @@ with os.fdopen(3, 'wb') as w:
             .into_inner()
             .unwrap();
 
-        assert_eq!(format!("{}", error), "Fd isn't the read end");
+        assert_eq!(format!("{}", error), "Fd is not the read end");
     }
 
     #[tokio::test]
