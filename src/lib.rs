@@ -346,7 +346,7 @@ impl IntoRawFd for PipeRead {
 impl FromRawFd for PipeRead {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         set_nonblocking(fd);
-        Self(AsyncFd::new(PipeFd(fd)).unwrap())
+        Self::new(fd).unwrap()
     }
 }
 
@@ -395,7 +395,7 @@ impl IntoRawFd for PipeWrite {
 impl FromRawFd for PipeWrite {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         set_nonblocking(fd);
-        Self(AsyncFd::new(PipeFd(fd)).unwrap())
+        Self::new(fd).unwrap()
     }
 }
 
