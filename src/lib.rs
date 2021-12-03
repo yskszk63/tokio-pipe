@@ -253,7 +253,7 @@ pub async fn splice(
 pub struct PipeRead(AsyncFd<PipeFd>);
 impl PipeRead {
     fn new(fd: RawFd) -> Result<Self, io::Error> {
-        Ok(PipeRead(AsyncFd::new(PipeFd(fd))?))
+        Ok(Self(AsyncFd::new(PipeFd(fd))?))
     }
 
     /// * `fd` - PipeRead would take the ownership of this fd.
