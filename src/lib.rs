@@ -382,12 +382,16 @@ pub struct PipeWrite(AsyncFd<PipeFd>);
 
 impl PipeWrite {
     fn new(fd: RawFd) -> Result<Self, io::Error> {
-        Ok(Self(AsyncFd::new(PipeFd(fd))?))
+        Self::from_pipefd(PipeFd(fd))
+    }
+
+    fn from_pipefd(pipe_fd: PipeFd) -> Result<Self, io::Error> {
+        Ok(Self(AsyncFd::new(pipe_fd)?))
     }
 
     /// * `fd` - PipeWrite would take the ownership of this fd.
     pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
-        Ok(Self(AsyncFd::new(PipeFd::from_raw_fd_checked(fd, false)?)?))
+        Self::from_pipefd(PipeFd::from_raw_fd_checked(fd, false)?)
     }
 }
 
