@@ -265,7 +265,9 @@ impl PipeRead {
     /// * `fd` - PipeRead would take the ownership of this fd.
     pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
         check_pipe(fd)?;
-        if get_status_flags(fd)? == libc::O_RDONLY {
+        let status_flags = get_status_flags(fd)?;
+        if status_flags == libc::O_RDONLY {
+            set_nonblocking_checked(fd, status_flags)?;
             Self::new(fd)
         } else {
             Err(io::Error::new(
