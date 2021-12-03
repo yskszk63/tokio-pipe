@@ -44,10 +44,6 @@ const MAX_LEN: usize = <libc::c_int>::MAX as usize - 1;
 #[cfg(not(target_os = "macos"))]
 const MAX_LEN: usize = <libc::ssize_t>::MAX as usize;
 
-unsafe fn set_nonblocking(fd: RawFd) {
-    libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK);
-}
-
 macro_rules! try_libc {
     ($e: expr) => {{
         let ret = $e;
@@ -80,6 +76,11 @@ macro_rules! ready {
 
 fn is_wouldblock(err: &io::Error) -> bool {
     err.kind() == io::ErrorKind::WouldBlock
+}
+
+unsafe fn set_nonblocking(fd: RawFd) {
+    let status_flags = libc::fcntl(fd, libc::F_GETFL);
+    libc::fcntl(fd, libc::F_SETFL, status_flags | libc::O_NONBLOCK);
 }
 
 fn set_nonblocking_checked(fd: RawFd, status_flags: libc::c_int) -> Result<(), io::Error> {
