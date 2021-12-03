@@ -278,7 +278,7 @@ pub async fn splice(
 pub struct PipeRead(AsyncFd<PipeFd>);
 impl PipeRead {
     fn new(fd: RawFd) -> Result<Self, io::Error> {
-        Ok(Self(AsyncFd::new(PipeFd(fd))?))
+        Self::from_pipefd(PipeFd(fd))
     }
 
     fn from_pipefd(pipe_fd: PipeFd) -> Result<Self, io::Error> {
