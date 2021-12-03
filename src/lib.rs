@@ -86,9 +86,9 @@ unsafe fn set_nonblocking(fd: RawFd) {
     }
 }
 
-fn set_nonblocking_checked(fd: RawFd, status_flags: libc::c_int) -> Result<(), io::Error> {
+unsafe fn set_nonblocking_checked(fd: RawFd, status_flags: libc::c_int) -> Result<(), io::Error> {
     if (status_flags & libc::O_NONBLOCK) == 0 {
-        let res = unsafe { libc::fcntl(fd, libc::F_SETFL, status_flags | libc::O_NONBLOCK) };
+        let res = libc::fcntl(fd, libc::F_SETFL, status_flags | libc::O_NONBLOCK);
         try_libc!(res);
     }
 
@@ -129,7 +129,7 @@ impl PipeFd {
         check_pipe(fd)?;
         let status_flags = get_status_flags(fd)?;
         if (status_flags & libc::O_ACCMODE) == access_mode {
-            set_nonblocking_checked(fd, status_flags)?;
+            unsafe { set_nonblocking_checked(fd, status_flags) }?;
             Ok(Self(fd))
         } else {
             Err(io::Error::new(io::ErrorKind::Other, errmsg))
