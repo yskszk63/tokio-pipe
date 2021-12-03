@@ -92,15 +92,13 @@ fn set_nonblocking_checked(fd: RawFd, status_flags: libc::c_int) -> Result<(), i
 fn check_pipe(fd: RawFd) -> Result<(), io::Error> {
     let mut stat = mem::MaybeUninit::<libc::stat>::uninit();
 
-    if unsafe { libc::fstat(fd, stat.as_mut_ptr()) } == -1 {
-        Err(io::Error::last_os_error())
+    try_libc!(unsafe { libc::fstat(fd, stat.as_mut_ptr()) });
+
+    let stat = unsafe { stat.assume_init() };
+    if (stat.st_mode & libc::S_IFMT) != libc::S_IFIFO {
+        Err(io::Error::new(io::ErrorKind::Other, "Fd is not a pipe"))
     } else {
-        let stat = unsafe { stat.assume_init() };
-        if (stat.st_mode & libc::S_IFMT) != libc::S_IFIFO {
-            Err(io::Error::new(io::ErrorKind::Other, "Fd is not a pipe"))
-        } else {
-            Ok(())
-        }
+        Ok(())
     }
 }
 
