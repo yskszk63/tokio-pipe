@@ -115,6 +115,27 @@ fn get_status_flags(fd: RawFd) -> Result<libc::c_int, io::Error> {
 #[derive(Debug)]
 struct PipeFd(RawFd);
 
+impl PipeFd {
+    /// * `fd` - PipeFd would take the ownership of this fd.
+    /// * `readable` - true for the read end, false for the write end
+    fn from_raw_fd_checked(fd: RawFd, readable: bool) -> Result<Self, io::Error> {
+        let (access_mode, errmsg) = if readable {
+            (libc::O_RDONLY, "Fd isn't the read end")
+        } else {
+            (libc::O_WRONLY, "Fd isn't the write end")
+        };
+
+        check_pipe(fd)?;
+        let status_flags = get_status_flags(fd)?;
+        if (status_flags & libc::O_ACCMODE) == access_mode {
+            set_nonblocking_checked(fd, status_flags)?;
+            Ok(Self(fd))
+        } else {
+            Err(io::Error::new(io::ErrorKind::Other, errmsg))
+        }
+    }
+}
+
 impl AsRawFd for PipeFd {
     fn as_raw_fd(&self) -> RawFd {
         self.0
@@ -262,17 +283,7 @@ impl PipeRead {
 
     /// * `fd` - PipeRead would take the ownership of this fd.
     pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
-        check_pipe(fd)?;
-        let status_flags = get_status_flags(fd)?;
-        if (status_flags & libc::O_ACCMODE) == libc::O_RDONLY {
-            set_nonblocking_checked(fd, status_flags)?;
-            Self::new(fd)
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Fd isn't the read end",
-            ))
-        }
+        Ok(Self(AsyncFd::new(PipeFd::from_raw_fd_checked(fd, true)?)?))
     }
 
     /// Moves data between pipe and fd without copying between kernel address space and
@@ -369,19 +380,10 @@ impl PipeWrite {
     fn new(fd: RawFd) -> Result<Self, io::Error> {
         Ok(Self(AsyncFd::new(PipeFd(fd))?))
     }
+
     /// * `fd` - PipeWrite would take the ownership of this fd.
     pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
-        check_pipe(fd)?;
-        let status_flags = get_status_flags(fd)?;
-        if (status_flags & libc::O_ACCMODE) == libc::O_WRONLY {
-            set_nonblocking_checked(fd, status_flags)?;
-            Self::new(fd)
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Fd isn't the write end",
-            ))
-        }
+        Ok(Self(AsyncFd::new(PipeFd::from_raw_fd_checked(fd, false)?)?))
     }
 }
 
