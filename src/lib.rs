@@ -83,13 +83,13 @@ fn is_wouldblock(err: &io::Error) -> bool {
     err.kind() == io::ErrorKind::WouldBlock
 }
 
-unsafe fn check_pipe(fd: RawFd) -> Result<(), io::Error> {
+fn check_pipe(fd: RawFd) -> Result<(), io::Error> {
     let mut stat = mem::MaybeUninit::<libc::stat>::uninit();
 
-    if libc::fstat(fd, stat.as_mut_ptr()) == -1 {
+    if unsafe { libc::fstat(fd, stat.as_mut_ptr()) } == -1 {
         Err(io::Error::last_os_error())
     } else {
-        let stat = stat.assume_init();
+        let stat = unsafe { stat.assume_init() };
         if (stat.st_mode & libc::S_IFMT) != libc::S_IFIFO {
             Err(io::Error::new(io::ErrorKind::Other, "Fd is not a pipe"))
         } else {
@@ -254,9 +254,7 @@ pub struct PipeRead(AsyncFd<PipeFd>);
 impl PipeRead {
     /// * `fd` - PipeRead would take the ownership of this fd.
     pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
-        unsafe {
-            check_pipe(fd)?;
-        }
+        check_pipe(fd)?;
         if unsafe { get_status_flags(fd) }? == libc::O_RDONLY {
             Ok(PipeRead(AsyncFd::new(PipeFd(fd))?))
         } else {
