@@ -94,6 +94,15 @@ unsafe fn is_pipe(fd: RawFd) -> Result<bool, io::Error> {
     }
 }
 
+unsafe fn get_status_flags(fd: RawFd) -> Result<libc::c_int, io::Error> {
+    let status_flags = libc::fcntl(fd, libc::F_GETFL);
+    if status_flags == -1 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(status_flags)
+    }
+}
+
 // needs impl AsRawFd for RawFd (^v1.48)
 #[derive(Debug)]
 struct PipeFd(RawFd);
