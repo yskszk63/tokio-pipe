@@ -360,11 +360,14 @@ impl fmt::Debug for PipeRead {
 pub struct PipeWrite(AsyncFd<PipeFd>);
 
 impl PipeWrite {
+    fn new(fd: RawFd) -> Result<Self, io::Error> {
+        Ok(Self(AsyncFd::new(PipeFd(fd))?))
+    }
     /// * `fd` - PipeWrite would take the ownership of this fd.
     pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
         check_pipe(fd)?;
         if get_status_flags(fd)? == libc::O_WRONLY {
-            Ok(Self(AsyncFd::new(PipeFd(fd))?))
+            Self::new(fd)
         } else {
             Err(io::Error::new(
                 io::ErrorKind::Other,
@@ -541,7 +544,7 @@ fn sys_pipe() -> io::Result<(RawFd, RawFd)> {
 /// Open pipe
 pub fn pipe() -> io::Result<(PipeRead, PipeWrite)> {
     let (r, w) = sys_pipe()?;
-    Ok((PipeRead::new(r)?, PipeWrite(AsyncFd::new(PipeFd(w))?)))
+    Ok((PipeRead::new(r)?, PipeWrite::new(w)?))
 }
 
 #[cfg(test)]
