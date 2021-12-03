@@ -84,8 +84,10 @@ unsafe fn set_nonblocking(fd: RawFd) {
 }
 
 fn set_nonblocking_checked(fd: RawFd, status_flags: libc::c_int) -> Result<(), io::Error> {
-    let res = unsafe { libc::fcntl(fd, libc::F_SETFL, status_flags | libc::O_NONBLOCK) };
-    try_libc!(res);
+    if (status_flags & libc::O_NONBLOCK) == 0 {
+        let res = unsafe { libc::fcntl(fd, libc::F_SETFL, status_flags | libc::O_NONBLOCK) };
+        try_libc!(res);
+    }
 
     Ok(())
 }
