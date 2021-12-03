@@ -98,8 +98,8 @@ fn check_pipe(fd: RawFd) -> Result<(), io::Error> {
     }
 }
 
-unsafe fn get_status_flags(fd: RawFd) -> Result<libc::c_int, io::Error> {
-    let status_flags = libc::fcntl(fd, libc::F_GETFL);
+fn get_status_flags(fd: RawFd) -> Result<libc::c_int, io::Error> {
+    let status_flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if status_flags == -1 {
         Err(io::Error::last_os_error())
     } else {
@@ -255,7 +255,7 @@ impl PipeRead {
     /// * `fd` - PipeRead would take the ownership of this fd.
     pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
         check_pipe(fd)?;
-        if unsafe { get_status_flags(fd) }? == libc::O_RDONLY {
+        if get_status_flags(fd)? == libc::O_RDONLY {
             Ok(PipeRead(AsyncFd::new(PipeFd(fd))?))
         } else {
             Err(io::Error::new(
