@@ -359,6 +359,21 @@ impl fmt::Debug for PipeRead {
 /// Pipe write
 pub struct PipeWrite(AsyncFd<PipeFd>);
 
+impl PipeWrite {
+    /// * `fd` - PipeWrite would take the ownership of this fd.
+    pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
+        check_pipe(fd)?;
+        if get_status_flags(fd)? == libc::O_WRONLY {
+            Ok(Self(AsyncFd::new(PipeFd(fd))?))
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Fd isn't the write end",
+            ))
+        }
+    }
+}
+
 impl AsRawFd for PipeWrite {
     fn as_raw_fd(&self) -> RawFd {
         self.0.as_raw_fd()
