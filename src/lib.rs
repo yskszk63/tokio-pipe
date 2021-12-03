@@ -83,7 +83,7 @@ fn is_wouldblock(err: &io::Error) -> bool {
     err.kind() == io::ErrorKind::WouldBlock
 }
 
-unsafe fn is_pipe(fd: RawFd) -> Result<(), io::Error> {
+unsafe fn check_pipe(fd: RawFd) -> Result<(), io::Error> {
     let mut stat = mem::MaybeUninit::<libc::stat>::uninit();
 
     if libc::fstat(fd, stat.as_mut_ptr()) == -1 {
