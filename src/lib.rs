@@ -83,14 +83,18 @@ fn is_wouldblock(err: &io::Error) -> bool {
     err.kind() == io::ErrorKind::WouldBlock
 }
 
-unsafe fn is_pipe(fd: RawFd) -> Result<bool, io::Error> {
+unsafe fn is_pipe(fd: RawFd) -> Result<(), io::Error> {
     let mut stat = mem::MaybeUninit::<libc::stat>::uninit();
 
     if libc::fstat(fd, stat.as_mut_ptr()) == -1 {
         Err(io::Error::last_os_error())
     } else {
         let stat = stat.assume_init();
-        Ok((stat.st_mode & libc::S_IFMT) == libc::S_IFIFO)
+        if (stat.st_mode & libc::S_IFMT) != libc::S_IFIFO {
+            Err(io::Error::new(io::ErrorKind::Other, "Fd is not a pipe"))
+        } else {
+            Ok(())
+        }
     }
 }
 
