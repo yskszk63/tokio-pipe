@@ -252,6 +252,21 @@ pub async fn splice(
 /// Pipe read
 pub struct PipeRead(AsyncFd<PipeFd>);
 impl PipeRead {
+    /// * `fd` - PipeRead would take the ownership of this fd.
+    pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
+        unsafe {
+            check_pipe(fd)?;
+        }
+        if unsafe { get_status_flags(fd) }? == libc::O_RDONLY {
+            Ok(PipeRead(AsyncFd::new(PipeFd(fd))?))
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Fd isn't the read end",
+            ))
+        }
+    }
+
     /// Moves data between pipe and fd without copying between kernel address space and
     /// user address space.
     ///
