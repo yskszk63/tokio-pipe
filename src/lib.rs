@@ -920,4 +920,32 @@ with os.fdopen(3, 'wb') as w:
 
         assert_eq!(format!("{}", error), "Fd is not a pipe");
     }
+
+    #[tokio::test]
+    async fn test_pipewrite_from_raw_fd_checked_success() {
+        let (_r, w) = pipe().unwrap();
+        let _w = PipeWrite::from_raw_fd_checked(w.into_raw_fd()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_pipewrite_from_raw_fd_checked_failure_not_write_end() {
+        let (r, _w) = pipe().unwrap();
+        let error = PipeWrite::from_raw_fd_checked(r.into_raw_fd())
+            .unwrap_err()
+            .into_inner()
+            .unwrap();
+
+        assert_eq!(format!("{}", error), "Fd is not the write end");
+    }
+
+    #[tokio::test]
+    async fn test_pipewrite_from_raw_fd_checked_failure_not_pipe() {
+        let fd = File::open("/dev/null").unwrap().into_raw_fd();
+        let error = PipeWrite::from_raw_fd_checked(fd)
+            .unwrap_err()
+            .into_inner()
+            .unwrap();
+
+        assert_eq!(format!("{}", error), "Fd is not a pipe");
+    }
 }
