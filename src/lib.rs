@@ -103,12 +103,7 @@ fn check_pipe(fd: RawFd) -> Result<(), io::Error> {
 }
 
 fn get_status_flags(fd: RawFd) -> Result<libc::c_int, io::Error> {
-    let status_flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-    if status_flags == -1 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(status_flags)
-    }
+    Ok(try_libc!(unsafe { libc::fcntl(fd, libc::F_GETFL) }))
 }
 
 // needs impl AsRawFd for RawFd (^v1.48)
