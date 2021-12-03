@@ -20,6 +20,7 @@
 //! }
 //! ```
 use std::cmp;
+use std::convert::TryFrom;
 use std::ffi::c_void;
 use std::fmt;
 use std::io;
@@ -276,6 +277,15 @@ pub async fn splice(
 
 /// Pipe read
 pub struct PipeRead(AsyncFd<PipeFd>);
+
+impl TryFrom<RawFd> for PipeRead {
+    type Error = io::Error;
+
+    fn try_from(fd: RawFd) -> Result<Self, Self::Error> {
+        Self::from_raw_fd_checked(fd)
+    }
+}
+
 impl PipeRead {
     fn new(fd: RawFd) -> Result<Self, io::Error> {
         Self::from_pipefd(PipeFd(fd))
@@ -379,6 +389,14 @@ impl fmt::Debug for PipeRead {
 
 /// Pipe write
 pub struct PipeWrite(AsyncFd<PipeFd>);
+
+impl TryFrom<RawFd> for PipeWrite {
+    type Error = io::Error;
+
+    fn try_from(fd: RawFd) -> Result<Self, Self::Error> {
+        Self::from_raw_fd_checked(fd)
+    }
+}
 
 impl PipeWrite {
     fn new(fd: RawFd) -> Result<Self, io::Error> {
