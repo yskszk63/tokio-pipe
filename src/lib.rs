@@ -101,10 +101,10 @@ fn check_pipe(fd: RawFd) -> Result<(), io::Error> {
     try_libc!(unsafe { libc::fstat(fd, stat.as_mut_ptr()) });
 
     let stat = unsafe { stat.assume_init() };
-    if (stat.st_mode & libc::S_IFMT) != libc::S_IFIFO {
-        Err(io::Error::new(io::ErrorKind::Other, "Fd is not a pipe"))
-    } else {
+    if (stat.st_mode & libc::S_IFMT) == libc::S_IFIFO {
         Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::Other, "Fd is not a pipe"))
     }
 }
 
