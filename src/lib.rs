@@ -20,6 +20,7 @@
 //! }
 //! ```
 use std::cmp;
+use std::convert::TryFrom;
 use std::ffi::c_void;
 use std::fmt;
 use std::io;
@@ -44,11 +45,6 @@ const MAX_LEN: usize = <libc::c_int>::MAX as usize - 1;
 #[cfg(not(target_os = "macos"))]
 const MAX_LEN: usize = <libc::ssize_t>::MAX as usize;
 
-unsafe fn set_nonblocking(fd: RawFd) {
-    libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK);
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "solaris")))]
 macro_rules! try_libc {
     ($e: expr) => {{
         let ret = $e;
@@ -83,9 +79,63 @@ fn is_wouldblock(err: &io::Error) -> bool {
     err.kind() == io::ErrorKind::WouldBlock
 }
 
+unsafe fn set_nonblocking(fd: RawFd) {
+    let status_flags = libc::fcntl(fd, libc::F_GETFL);
+    if (status_flags & libc::O_NONBLOCK) == 0 {
+        libc::fcntl(fd, libc::F_SETFL, status_flags | libc::O_NONBLOCK);
+    }
+}
+
+unsafe fn set_nonblocking_checked(fd: RawFd, status_flags: libc::c_int) -> Result<(), io::Error> {
+    if (status_flags & libc::O_NONBLOCK) == 0 {
+        let res = libc::fcntl(fd, libc::F_SETFL, status_flags | libc::O_NONBLOCK);
+        try_libc!(res);
+    }
+
+    Ok(())
+}
+
+fn check_pipe(fd: RawFd) -> Result<(), io::Error> {
+    let mut stat = mem::MaybeUninit::<libc::stat>::uninit();
+
+    try_libc!(unsafe { libc::fstat(fd, stat.as_mut_ptr()) });
+
+    let stat = unsafe { stat.assume_init() };
+    if (stat.st_mode & libc::S_IFMT) == libc::S_IFIFO {
+        Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::Other, "Fd is not a pipe"))
+    }
+}
+
+fn get_status_flags(fd: RawFd) -> Result<libc::c_int, io::Error> {
+    Ok(try_libc!(unsafe { libc::fcntl(fd, libc::F_GETFL) }))
+}
+
 // needs impl AsRawFd for RawFd (^v1.48)
 #[derive(Debug)]
 struct PipeFd(RawFd);
+
+impl PipeFd {
+    /// * `fd` - PipeFd would take the ownership of this fd.
+    /// * `readable` - true for the read end, false for the write end
+    fn from_raw_fd_checked(fd: RawFd, readable: bool) -> Result<Self, io::Error> {
+        let (access_mode, errmsg) = if readable {
+            (libc::O_RDONLY, "Fd is not the read end")
+        } else {
+            (libc::O_WRONLY, "Fd is not the write end")
+        };
+
+        check_pipe(fd)?;
+        let status_flags = get_status_flags(fd)?;
+        if (status_flags & libc::O_ACCMODE) == access_mode {
+            unsafe { set_nonblocking_checked(fd, status_flags) }?;
+            Ok(Self(fd))
+        } else {
+            Err(io::Error::new(io::ErrorKind::Other, errmsg))
+        }
+    }
+}
 
 impl AsRawFd for PipeFd {
     fn as_raw_fd(&self) -> RawFd {
@@ -227,7 +277,29 @@ pub async fn splice(
 
 /// Pipe read
 pub struct PipeRead(AsyncFd<PipeFd>);
+
+impl TryFrom<RawFd> for PipeRead {
+    type Error = io::Error;
+
+    fn try_from(fd: RawFd) -> Result<Self, Self::Error> {
+        Self::from_raw_fd_checked(fd)
+    }
+}
+
 impl PipeRead {
+    fn new(fd: RawFd) -> Result<Self, io::Error> {
+        Self::from_pipefd(PipeFd(fd))
+    }
+
+    fn from_pipefd(pipe_fd: PipeFd) -> Result<Self, io::Error> {
+        Ok(Self(AsyncFd::new(pipe_fd)?))
+    }
+
+    /// * `fd` - PipeRead would take the ownership of this fd.
+    pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
+        Self::from_pipefd(PipeFd::from_raw_fd_checked(fd, true)?)
+    }
+
     /// Moves data between pipe and fd without copying between kernel address space and
     /// user address space.
     ///
@@ -305,7 +377,7 @@ impl IntoRawFd for PipeRead {
 impl FromRawFd for PipeRead {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         set_nonblocking(fd);
-        Self(AsyncFd::new(PipeFd(fd)).unwrap())
+        Self::new(fd).unwrap()
     }
 }
 
@@ -317,6 +389,29 @@ impl fmt::Debug for PipeRead {
 
 /// Pipe write
 pub struct PipeWrite(AsyncFd<PipeFd>);
+
+impl TryFrom<RawFd> for PipeWrite {
+    type Error = io::Error;
+
+    fn try_from(fd: RawFd) -> Result<Self, Self::Error> {
+        Self::from_raw_fd_checked(fd)
+    }
+}
+
+impl PipeWrite {
+    fn new(fd: RawFd) -> Result<Self, io::Error> {
+        Self::from_pipefd(PipeFd(fd))
+    }
+
+    fn from_pipefd(pipe_fd: PipeFd) -> Result<Self, io::Error> {
+        Ok(Self(AsyncFd::new(pipe_fd)?))
+    }
+
+    /// * `fd` - PipeWrite would take the ownership of this fd.
+    pub fn from_raw_fd_checked(fd: RawFd) -> Result<Self, io::Error> {
+        Self::from_pipefd(PipeFd::from_raw_fd_checked(fd, false)?)
+    }
+}
 
 impl AsRawFd for PipeWrite {
     fn as_raw_fd(&self) -> RawFd {
@@ -336,7 +431,7 @@ impl IntoRawFd for PipeWrite {
 impl FromRawFd for PipeWrite {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         set_nonblocking(fd);
-        Self(AsyncFd::new(PipeFd(fd)).unwrap())
+        Self::new(fd).unwrap()
     }
 }
 
@@ -485,15 +580,15 @@ fn sys_pipe() -> io::Result<(RawFd, RawFd)> {
 /// Open pipe
 pub fn pipe() -> io::Result<(PipeRead, PipeWrite)> {
     let (r, w) = sys_pipe()?;
-    Ok((
-        PipeRead(AsyncFd::new(PipeFd(r))?),
-        PipeWrite(AsyncFd::new(PipeFd(w))?),
-    ))
+    Ok((PipeRead::new(r)?, PipeWrite::new(w)?))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::fs::File;
+
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[cfg(target_os = "linux")]
@@ -796,5 +891,61 @@ with os.fdopen(3, 'wb') as w:
             }
         });
         tokio::try_join!(w_task, r_task).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_piperead_from_raw_fd_checked_success() {
+        let (r, _w) = pipe().unwrap();
+        let _r = PipeRead::from_raw_fd_checked(r.into_raw_fd()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_piperead_from_raw_fd_checked_failure_not_read_end() {
+        let (_r, w) = pipe().unwrap();
+        let error = PipeRead::from_raw_fd_checked(w.into_raw_fd())
+            .unwrap_err()
+            .into_inner()
+            .unwrap();
+
+        assert_eq!(format!("{}", error), "Fd is not the read end");
+    }
+
+    #[tokio::test]
+    async fn test_piperead_from_raw_fd_checked_failure_not_pipe() {
+        let fd = File::open("/dev/null").unwrap().into_raw_fd();
+        let error = PipeRead::from_raw_fd_checked(fd)
+            .unwrap_err()
+            .into_inner()
+            .unwrap();
+
+        assert_eq!(format!("{}", error), "Fd is not a pipe");
+    }
+
+    #[tokio::test]
+    async fn test_pipewrite_from_raw_fd_checked_success() {
+        let (_r, w) = pipe().unwrap();
+        let _w = PipeWrite::from_raw_fd_checked(w.into_raw_fd()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_pipewrite_from_raw_fd_checked_failure_not_write_end() {
+        let (r, _w) = pipe().unwrap();
+        let error = PipeWrite::from_raw_fd_checked(r.into_raw_fd())
+            .unwrap_err()
+            .into_inner()
+            .unwrap();
+
+        assert_eq!(format!("{}", error), "Fd is not the write end");
+    }
+
+    #[tokio::test]
+    async fn test_pipewrite_from_raw_fd_checked_failure_not_pipe() {
+        let fd = File::open("/dev/null").unwrap().into_raw_fd();
+        let error = PipeWrite::from_raw_fd_checked(fd)
+            .unwrap_err()
+            .into_inner()
+            .unwrap();
+
+        assert_eq!(format!("{}", error), "Fd is not a pipe");
     }
 }
