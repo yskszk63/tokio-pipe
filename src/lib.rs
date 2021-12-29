@@ -555,6 +555,10 @@ impl AsyncWrite for PipeWrite {
     ) -> Poll<Result<usize, io::Error>> {
         self.as_ref().poll_write_vectored_impl(cx, bufs)
     }
+
+    fn is_write_vectored(&self) -> bool {
+        true
+    }
 }
 
 impl fmt::Debug for PipeWrite {
