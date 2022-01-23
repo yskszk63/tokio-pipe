@@ -182,12 +182,17 @@ pub struct AtomicWriteIoSlices<'a, 'b>(&'a [io::IoSlice<'b>]);
 impl<'a, 'b> AtomicWriteIoSlices<'a, 'b> {
     /// If total length is more than PIPE_BUF, then return None.
     pub fn new(buffers: &'a [io::IoSlice<'b>]) -> Option<Self> {
-        let len: usize = buffers.iter().map(|slice| slice.len()).sum();
-        if len <= PIPE_BUF {
-            Some(Self(buffers))
-        } else {
-            None
+        let mut bytes = 0;
+
+        for buffer in buffers {
+            bytes += buffer.len();
+
+            if bytes > PIPE_BUF {
+                return None;
+            }
         }
+
+        Some(Self(buffers))
     }
 
     pub fn into_inner(self) -> &'a [io::IoSlice<'b>] {
