@@ -178,21 +178,25 @@ impl<'a> AtomicWriteBuffer<'a> {
 
 /// `IoSlice`s that can be written atomically
 #[derive(Copy, Clone, Debug)]
-pub struct AtomicWriteIoSlices<'a, 'b>(&'a [io::IoSlice<'b>]);
+pub struct AtomicWriteIoSlices<'a, 'b>(&'a [io::IoSlice<'b>], usize);
 impl<'a, 'b> AtomicWriteIoSlices<'a, 'b> {
     /// If total length is more than PIPE_BUF, then return None.
     pub fn new(buffers: &'a [io::IoSlice<'b>]) -> Option<Self> {
-        let mut bytes = 0;
+        let mut total_len = 0;
 
         for buffer in buffers {
-            bytes += buffer.len();
+            total_len += buffer.len();
 
-            if bytes > PIPE_BUF {
+            if total_len > PIPE_BUF {
                 return None;
             }
         }
 
-        Some(Self(buffers))
+        Some(Self(buffers, total_len))
+    }
+
+    pub fn get_total_len(self) -> usize {
+        self.1
     }
 
     pub fn into_inner(self) -> &'a [io::IoSlice<'b>] {
