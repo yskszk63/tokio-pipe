@@ -970,4 +970,25 @@ with os.fdopen(3, 'wb') as w:
 
         assert_eq!(format!("{}", error), "Fd is not a pipe");
     }
+
+    #[test]
+    fn test_atomic_write_io_slices() {
+        let bytes: Vec<u8> = (0..PIPE_BUF + 20)
+            .map(|i| (i % (u8::MAX as usize)) as u8)
+            .collect();
+        let mut io_slices = Vec::<io::IoSlice<'_>>::new();
+
+        for i in 0..bytes.len() {
+            io_slices.push(io::IoSlice::new(&bytes[i..i + 1]));
+        }
+
+        for i in 0..PIPE_BUF {
+            let slices = AtomicWriteIoSlices::new(&io_slices[..i]).unwrap();
+            assert_eq!(slices.get_total_len(), i);
+        }
+
+        for i in PIPE_BUF + 1..bytes.len() {
+            assert!(AtomicWriteIoSlices::new(&io_slices[..i]).is_none());
+        }
+    }
 }
