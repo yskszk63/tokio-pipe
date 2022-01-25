@@ -178,16 +178,25 @@ impl<'a> AtomicWriteBuffer<'a> {
 
 /// `IoSlice`s that can be written atomically
 #[derive(Copy, Clone, Debug)]
-pub struct AtomicWriteIoSlices<'a, 'b>(&'a [io::IoSlice<'b>]);
+pub struct AtomicWriteIoSlices<'a, 'b>(&'a [io::IoSlice<'b>], usize);
 impl<'a, 'b> AtomicWriteIoSlices<'a, 'b> {
     /// If total length is more than PIPE_BUF, then return None.
     pub fn new(buffers: &'a [io::IoSlice<'b>]) -> Option<Self> {
-        let len: usize = buffers.iter().map(|slice| slice.len()).sum();
-        if len <= PIPE_BUF {
-            Some(Self(buffers))
-        } else {
-            None
+        let mut total_len = 0;
+
+        for buffer in buffers {
+            total_len += buffer.len();
+
+            if total_len > PIPE_BUF {
+                return None;
+            }
         }
+
+        Some(Self(buffers, total_len))
+    }
+
+    pub fn get_total_len(self) -> usize {
+        self.1
     }
 
     pub fn into_inner(self) -> &'a [io::IoSlice<'b>] {
@@ -960,5 +969,26 @@ with os.fdopen(3, 'wb') as w:
             .unwrap();
 
         assert_eq!(format!("{}", error), "Fd is not a pipe");
+    }
+
+    #[test]
+    fn test_atomic_write_io_slices() {
+        let bytes: Vec<u8> = (0..PIPE_BUF + 20)
+            .map(|i| (i % (u8::MAX as usize)) as u8)
+            .collect();
+        let mut io_slices = Vec::<io::IoSlice<'_>>::new();
+
+        for i in 0..bytes.len() {
+            io_slices.push(io::IoSlice::new(&bytes[i..i + 1]));
+        }
+
+        for i in 0..PIPE_BUF {
+            let slices = AtomicWriteIoSlices::new(&io_slices[..i]).unwrap();
+            assert_eq!(slices.get_total_len(), i);
+        }
+
+        for i in PIPE_BUF + 1..bytes.len() {
+            assert!(AtomicWriteIoSlices::new(&io_slices[..i]).is_none());
+        }
     }
 }
