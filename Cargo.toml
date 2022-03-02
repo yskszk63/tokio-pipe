@@ -9,7 +9,7 @@ repository = "https://github.com/yskszk63/tokio-pipe"
 readme = "README.md"
 keywords = ["tokio", "pipe", "async"]
 categories = ["asynchronous"]
-rust-version = "1.46"
+rust-version = "1.49"
 
 [dependencies]
 tokio = { version="1.17", features=["net"] }
