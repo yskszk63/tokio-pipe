@@ -46,7 +46,7 @@ jobs:
           - macos-latest
         rust-version:
           - stable
-          - 1.46
+          - "1.49"
     steps:
     - uses: actions/checkout@v2
 

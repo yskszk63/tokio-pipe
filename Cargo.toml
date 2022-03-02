@@ -9,12 +9,12 @@ repository = "https://github.com/yskszk63/tokio-pipe"
 readme = "README.md"
 keywords = ["tokio", "pipe", "async"]
 categories = ["asynchronous"]
-rust-version = "1.46"
+rust-version = "1.49"
 
 [dependencies]
-tokio = { version="1.15", features=["net"] }
+tokio = { version="1.17", features=["net"] }
 libc = "0.2"
 
 [dev-dependencies]
-tokio = { version="1.15", features=["macros", "rt-multi-thread", "io-util", "process", "time"] }
+tokio = { version="1.17", features=["macros", "rt-multi-thread", "io-util", "process", "time"] }
 anyhow = "1.0"
