@@ -11,7 +11,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - uses: actions-rs/toolchain@v1
       with:
@@ -48,7 +48,7 @@ jobs:
           - stable
           - "1.49"
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - uses: actions-rs/toolchain@v1
       with:
@@ -64,18 +64,20 @@ jobs:
 
   cov:
     runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly
+        toolchain: stable
         override: true
         profile: minimal
         components: llvm-tools-preview
 
     - name: Install cargo-llvm-cov
-      run: curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin
+      uses: taiki-e/install-action@cargo-llvm-cov
 
     - name: Tests
       uses: actions-rs/cargo@v1
@@ -84,7 +86,7 @@ jobs:
         args: --all-features --workspace --lcov --output-path lcov.info
 
     - name: Upload coverage
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v3
       with:
-        file: ${{ steps.coverage.outputs.report }}
+        files: lcov.info
 # vim: set sw=2 ts=2 sts=2:
