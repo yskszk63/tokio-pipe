@@ -253,6 +253,11 @@ async fn splice_impl(
     len: usize,
     has_more_data: bool,
 ) -> io::Result<usize> {
+    // There is only one reader and one writer, so it only needs to polled once.
+    let _read_ready = asyncfd_in.readable().await?;
+    let _write_ready = asyncfd_out.writable().await?;
+
+    // Prepare args for the syscall
     let fd_in = asyncfd_in.as_raw_fd();
     let fd_out = asyncfd_out.as_raw_fd();
 
@@ -265,10 +270,6 @@ async fn splice_impl(
         } else {
             0
         };
-
-    // There is only one reader and one writer, so it only needs to polled once.
-    let _read_ready = asyncfd_in.readable().await?;
-    let _write_ready = asyncfd_out.writable().await?;
 
     loop {
         let ret = unsafe { libc::splice(fd_in, off_in, fd_out, off_out, len, flags) };
