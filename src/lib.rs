@@ -118,7 +118,7 @@ unsafe fn test_read_write_readiness(reader: RawFd, writer: RawFd) -> io::Result<
     ];
 
     // Specify timeout to 0 so that it returns immediately.
-    try_libc!(poll(fds.as_mut_slice().as_mut_ptr(), 2, 0));
+    try_libc!(poll(&mut fds[0], 2, 0));
 
     let is_read_ready = match fds[0].revents {
         POLLERR | POLLHUP | POLLIN => true,
