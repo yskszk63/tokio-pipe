@@ -95,6 +95,18 @@ unsafe fn set_nonblocking_checked(fd: RawFd, status_flags: libc::c_int) -> Resul
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+unsafe fn test_read_ready(fd: RawFd) -> io::Result<isize> {
+    let mut buf = 0_u8;
+    cvt!(libc::read(fd, &mut buf as *mut u8 as *mut _, 0))
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn test_write_ready(fd: RawFd) -> io::Result<isize> {
+    let mut buf = 0_u8;
+    cvt!(libc::write(fd, &mut buf as *mut u8 as *mut _, 0))
+}
+
 fn check_pipe(fd: RawFd) -> Result<(), io::Error> {
     let mut stat = mem::MaybeUninit::<libc::stat>::uninit();
 
@@ -221,11 +233,25 @@ async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::R
         };
         match cvt!(ret) {
             Err(e) if is_wouldblock(&e) => {
-                read_ready.clear_ready();
-                write_ready.clear_ready();
+                if let Ok(res) =
+                    read_ready.try_io(|reader| unsafe { test_read_ready(reader.as_raw_fd()) })
+                {
+                    res?;
+                } else {
+                    read_ready = pipe_in.0.readable().await?;
+                    // Try the io again now that pipe_in is ready
+                    continue;
+                }
 
-                read_ready = pipe_in.0.readable().await?;
-                write_ready = pipe_out.0.writable().await?;
+                if let Ok(res) =
+                    write_ready.try_io(|writer| unsafe { test_write_ready(writer.as_raw_fd()) })
+                {
+                    res?;
+                } else {
+                    write_ready = pipe_out.0.writable().await?;
+                    // Try the io again now that pipe_out is ready
+                    continue;
+                }
             }
             Err(e) => break Err(e),
             Ok(ret) => break Ok(ret as usize),
