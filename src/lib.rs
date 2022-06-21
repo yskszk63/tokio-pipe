@@ -213,13 +213,16 @@ async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::R
     let mut read_ready = pipe_in.0.readable().await?;
     let mut write_ready = pipe_out.0.writable().await?;
 
-    read_ready.clear_ready();
-    write_ready.clear_ready();
-
     loop {
         let ret = unsafe { libc::tee(fd_in, fd_out, len, libc::SPLICE_F_NONBLOCK) };
         match cvt!(ret) {
-            Err(e) if is_wouldblock(&e) => (),
+            Err(e) if is_wouldblock(&e) => {
+                read_ready.clear_ready();
+                write_ready.clear_ready();
+
+                read_ready = pipe_in.0.readable().await?;
+                write_ready = pipe_out.0.writable().await?;
+            }
             Err(e) => break Err(e),
             Ok(ret) => break Ok(ret as usize),
         }
@@ -264,9 +267,6 @@ async fn splice_impl(
     let fd_in = asyncfd_in.as_raw_fd();
     let fd_out = asyncfd_out.as_raw_fd();
 
-    let off_in = as_ptr(off_in);
-    let off_out = as_ptr(off_out);
-
     let flags = libc::SPLICE_F_NONBLOCK
         | if has_more_data {
             libc::SPLICE_F_MORE
@@ -274,13 +274,17 @@ async fn splice_impl(
             0
         };
 
-    read_ready.clear_ready();
-    write_ready.clear_ready();
-
     loop {
-        let ret = unsafe { libc::splice(fd_in, off_in, fd_out, off_out, len, flags) };
+        let ret =
+            unsafe { libc::splice(fd_in, as_ptr(off_in), fd_out, as_ptr(off_out), len, flags) };
         match cvt!(ret) {
-            Err(e) if is_wouldblock(&e) => (),
+            Err(e) if is_wouldblock(&e) => {
+                read_ready.clear_ready();
+                write_ready.clear_ready();
+
+                read_ready = pipe_in.0.readable().await?;
+                write_ready = pipe_out.0.writable().await?;
+            }
             Err(e) => break Err(e),
             Ok(ret) => break Ok(ret as usize),
         }
