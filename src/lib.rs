@@ -314,11 +314,25 @@ async fn splice_impl(
         };
         match cvt!(ret) {
             Err(e) if is_wouldblock(&e) => {
-                read_ready.clear_ready();
-                write_ready.clear_ready();
+                if let Ok(res) =
+                    read_ready.try_io(|reader| unsafe { test_read_ready(reader.as_raw_fd()) })
+                {
+                    res?;
+                } else {
+                    read_ready = fd_in.readable().await?;
+                    // Try the io again now that pipe_in is ready
+                    continue;
+                }
 
-                read_ready = fd_in.readable().await?;
-                write_ready = fd_out.writable().await?;
+                if let Ok(res) =
+                    write_ready.try_io(|writer| unsafe { test_write_ready(writer.as_raw_fd()) })
+                {
+                    res?;
+                } else {
+                    write_ready = fd_out.writable().await?;
+                    // Try the io again now that pipe_out is ready
+                    continue;
+                }
             }
             Err(e) => break Err(e),
             Ok(ret) => break Ok(ret as usize),
