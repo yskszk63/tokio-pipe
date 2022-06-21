@@ -257,9 +257,9 @@ fn as_ptr<T>(option: Option<&mut T>) -> *mut T {
 #[cfg(target_os = "linux")]
 async fn splice_impl(
     fd_in: &mut AsyncFd<impl AsRawFd>,
-    off_in: Option<&mut off64_t>,
+    mut off_in: Option<&mut off64_t>,
     fd_out: &AsyncFd<impl AsRawFd>,
-    off_out: Option<&mut off64_t>,
+    mut off_out: Option<&mut off64_t>,
     len: usize,
     has_more_data: bool,
 ) -> io::Result<usize> {
@@ -279,9 +279,9 @@ async fn splice_impl(
         let ret = unsafe {
             libc::splice(
                 fd_in.as_raw_fd(),
-                as_ptr(off_in),
+                as_ptr(off_in.as_deref_mut()),
                 fd_out.as_raw_fd(),
-                as_ptr(off_out),
+                as_ptr(off_out.as_deref_mut()),
                 len,
                 flags,
             )
