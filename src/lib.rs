@@ -210,8 +210,8 @@ async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::R
     let fd_out = pipe_out.0.as_raw_fd();
 
     // There is only one reader and one writer, so it only needs to polled once.
-    let read_ready = pipe_in.0.readable().await?;
-    let write_ready = pipe_out.0.writable().await?;
+    let mut read_ready = pipe_in.0.readable().await?;
+    let mut write_ready = pipe_out.0.writable().await?;
 
     loop {
         let ret = unsafe { libc::tee(fd_in, fd_out, len, libc::SPLICE_F_NONBLOCK) };
@@ -258,8 +258,8 @@ async fn splice_impl(
     has_more_data: bool,
 ) -> io::Result<usize> {
     // There is only one reader and one writer, so it only needs to polled once.
-    let read_ready = asyncfd_in.readable().await?;
-    let write_ready = asyncfd_out.writable().await?;
+    let mut read_ready = asyncfd_in.readable().await?;
+    let mut write_ready = asyncfd_out.writable().await?;
 
     // Prepare args for the syscall
     let fd_in = asyncfd_in.as_raw_fd();
