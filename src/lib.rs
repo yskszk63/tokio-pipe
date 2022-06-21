@@ -95,16 +95,54 @@ unsafe fn set_nonblocking_checked(fd: RawFd, status_flags: libc::c_int) -> Resul
     Ok(())
 }
 
+/// Return whether (reader is ready, writer is ready).
+///
+/// Readiness for reader/writer does not just mean readable/writable,
+/// they are also considered as ready if they aqre disconnected or an
+/// exceptional condition has occured (`libc::POLLERR`).
 #[cfg(target_os = "linux")]
-unsafe fn test_read_ready(fd: RawFd) -> io::Result<isize> {
-    let mut buf = 0_u8;
-    cvt!(libc::read(fd, &mut buf as *mut u8 as *mut _, 0))
-}
+unsafe fn test_read_write_readiness(reader: RawFd, writer: RawFd) -> io::Result<(bool, bool)> {
+    use libc::{poll, pollfd, POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT};
 
-#[cfg(target_os = "linux")]
-unsafe fn test_write_ready(fd: RawFd) -> io::Result<isize> {
-    let mut buf = 0_u8;
-    cvt!(libc::write(fd, &mut buf as *mut u8 as *mut _, 0))
+    let mut fds = [
+        pollfd {
+            fd: reader,
+            events: POLLIN,
+            revents: 0,
+        },
+        pollfd {
+            fd: writer,
+            events: POLLOUT,
+            revents: 0,
+        },
+    ];
+
+    // Specify timeout to 0 so that it returns immediately.
+    try_libc!(poll(fds.as_mut_slice().as_mut_ptr(), 2, 0));
+
+    let is_read_ready = match fds[0].revents {
+        POLLERR | POLLHUP | POLLIN => true,
+        POLLNVAL => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "fd of reader is invalid",
+            ))
+        }
+        _ => false,
+    };
+
+    let is_writer_ready = match fds[1].revents {
+        POLLERR | POLLHUP | POLLOUT => true,
+        POLLNVAL => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "fd of writer is invalid",
+            ))
+        }
+        _ => false,
+    };
+
+    Ok((is_read_ready, is_writer_ready))
 }
 
 fn check_pipe(fd: RawFd) -> Result<(), io::Error> {
@@ -233,24 +271,26 @@ async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::R
         };
         match cvt!(ret) {
             Err(e) if is_wouldblock(&e) => {
-                if let Ok(res) =
-                    read_ready.try_io(|reader| unsafe { test_read_ready(reader.as_raw_fd()) })
-                {
-                    res?;
-                } else {
+                // Since tokio might use epoll's edge-triggered mode, we cannot blindly
+                // clear the readiness, otherwise it would block forever.
+                //
+                // So what we do instead is to use test_read_write_readiness, which
+                // uses poll to test for readiness.
+                //
+                // Poll always uses level-triggered mode and it does not require
+                // any registration at all.
+                let (read_readiness, write_readiness) = unsafe {
+                    test_read_write_readiness(pipe_in.as_raw_fd(), pipe_out.as_raw_fd())?
+                };
+
+                if !read_readiness {
+                    read_ready.clear_ready();
                     read_ready = pipe_in.0.readable().await?;
-                    // Try the io again now that pipe_in is ready
-                    continue;
                 }
 
-                if let Ok(res) =
-                    write_ready.try_io(|writer| unsafe { test_write_ready(writer.as_raw_fd()) })
-                {
-                    res?;
-                } else {
-                    write_ready = pipe_out.0.writable().await?;
-                    // Try the io again now that pipe_out is ready
-                    continue;
+                if !write_readiness {
+                    write_ready.clear_ready();
+                    write_ready = pipe_out.0.readable().await?;
                 }
             }
             Err(e) => break Err(e),
@@ -314,24 +354,25 @@ async fn splice_impl(
         };
         match cvt!(ret) {
             Err(e) if is_wouldblock(&e) => {
-                if let Ok(res) =
-                    read_ready.try_io(|reader| unsafe { test_read_ready(reader.as_raw_fd()) })
-                {
-                    res?;
-                } else {
+                // Since tokio might use epoll's edge-triggered mode, we cannot blindly
+                // clear the readiness, otherwise it would block forever.
+                //
+                // So what we do instead is to use test_read_write_readiness, which
+                // uses poll to test for readiness.
+                //
+                // Poll always uses level-triggered mode and it does not require
+                // any registration at all.
+                let (read_readiness, write_readiness) =
+                    unsafe { test_read_write_readiness(fd_in.as_raw_fd(), fd_out.as_raw_fd())? };
+
+                if !read_readiness {
+                    read_ready.clear_ready();
                     read_ready = fd_in.readable().await?;
-                    // Try the io again now that pipe_in is ready
-                    continue;
                 }
 
-                if let Ok(res) =
-                    write_ready.try_io(|writer| unsafe { test_write_ready(writer.as_raw_fd()) })
-                {
-                    res?;
-                } else {
-                    write_ready = fd_out.writable().await?;
-                    // Try the io again now that pipe_out is ready
-                    continue;
+                if !write_readiness {
+                    write_ready.clear_ready();
+                    write_ready = fd_out.readable().await?;
                 }
             }
             Err(e) => break Err(e),
