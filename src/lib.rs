@@ -258,8 +258,8 @@ async fn splice_impl(
     has_more_data: bool,
 ) -> io::Result<usize> {
     // There is only one reader and one writer, so it only needs to polled once.
-    let _read_ready = asyncfd_in.readable().await?;
-    let _write_ready = asyncfd_out.writable().await?;
+    let read_ready = asyncfd_in.readable().await?;
+    let write_ready = asyncfd_out.writable().await?;
 
     // Prepare args for the syscall
     let fd_in = asyncfd_in.as_raw_fd();
@@ -280,7 +280,11 @@ async fn splice_impl(
         match cvt!(ret) {
             Err(e) if is_wouldblock(&e) => (),
             Err(e) => break Err(e),
-            Ok(ret) => break Ok(ret as usize),
+            Ok(ret) => {
+                read_ready.clear_ready();
+                write_ready.clear_ready();
+                break Ok(ret as usize);
+            }
         }
     }
 }
