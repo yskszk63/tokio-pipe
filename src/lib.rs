@@ -213,16 +213,15 @@ async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::R
     let mut read_ready = pipe_in.0.readable().await?;
     let mut write_ready = pipe_out.0.writable().await?;
 
+    read_ready.clear_ready();
+    write_ready.clear_ready();
+
     loop {
         let ret = unsafe { libc::tee(fd_in, fd_out, len, libc::SPLICE_F_NONBLOCK) };
         match cvt!(ret) {
             Err(e) if is_wouldblock(&e) => (),
             Err(e) => break Err(e),
-            Ok(ret) => {
-                read_ready.clear_ready();
-                write_ready.clear_ready();
-                break Ok(ret as usize);
-            }
+            Ok(ret) => break Ok(ret as usize),
         }
     }
 }
@@ -275,16 +274,15 @@ async fn splice_impl(
             0
         };
 
+    read_ready.clear_ready();
+    write_ready.clear_ready();
+
     loop {
         let ret = unsafe { libc::splice(fd_in, off_in, fd_out, off_out, len, flags) };
         match cvt!(ret) {
             Err(e) if is_wouldblock(&e) => (),
             Err(e) => break Err(e),
-            Ok(ret) => {
-                read_ready.clear_ready();
-                write_ready.clear_ready();
-                break Ok(ret as usize);
-            }
+            Ok(ret) => break Ok(ret as usize),
         }
     }
 }
