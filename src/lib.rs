@@ -290,7 +290,7 @@ async fn tee_impl(pipe_in: &PipeRead, pipe_out: &PipeWrite, len: usize) -> io::R
 
                 if !write_readiness {
                     write_ready.clear_ready();
-                    write_ready = pipe_out.0.readable().await?;
+                    write_ready = pipe_out.0.writable().await?;
                 }
             }
             Err(e) => break Err(e),
@@ -372,7 +372,7 @@ async fn splice_impl(
 
                 if !write_readiness {
                     write_ready.clear_ready();
-                    write_ready = fd_out.readable().await?;
+                    write_ready = fd_out.writable().await?;
                 }
             }
             Err(e) => break Err(e),
